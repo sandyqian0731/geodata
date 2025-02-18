@@ -31,9 +31,20 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
     """HRRR3DWindHourlyDataset is a class that encaps a dataset from the HRRR
     dataset. It provides a streamlined workflow for downloading, preprocessing,
     and storing of these datasets.
+
+    Variables:
+        - u_fixed: zonal wind speed at 10m and 80m
+        - v_fixed: meridional wind speed at 10m and 80m
+        - wind_speed_fixed: wind speed at 10m and 80m
+        - u_hybrid: zonal wind speed at hybrid levels (variable across locations)
+        - v_hybrid: meridional wind speed at hybrid levels (variable across locations)
+
+    Important Coordinates:
+        - heightAboveGround: height above ground level of the fixed levels
+        - hybrid: hybrid level of the hybrid levels (fixed 1,2,3,4)
     """
 
-    weather_config = "wind"
+    weather_config = "wind_3d"
     product = "nat"  # Use "nat" product for 3D data
 
     def _download_file(self, file: AtomicDataset):
@@ -58,9 +69,14 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
         with redirect_stdout_to_logger(logger, logging.INFO):
             logger.info(f"Downloading HRRR wind data in bulk for {year}/{month}")
             fh.download(":[UV]GRD:[1,8]0 m")
+            fh.download(":[UV]GRD:[1234] hybrid level")
+            fh.download(":HGT:[1234] hybrid level")
 
             uv_10 = []
             uv_80 = []
+            uv_hybrid = []
+            hgt_hybrid = []
+
             for hour in date_range:
                 h = Herbie(
                     hour,
@@ -72,17 +88,33 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
 
                 try:
                     uv_10.append(
-                        h.xarray("[UV]GRD:10 m").rename({"u10": "u", "v10": "v"})
+                        h.xarray(":[UV]GRD:10 m", remove_grib=False).rename(
+                            {"u10": "u", "v10": "v"}
+                        )
                     )
-                    uv_80.append(h.xarray("[UV]GRD:80 m"))
+                    uv_80.append(h.xarray(":[UV]GRD:80 m", remove_grib=False))
+                    uv_hybrid.append(
+                        h.xarray(":[UV]GRD:[1234] hybrid level", remove_grib=False)
+                    )
+                    hgt_hybrid.append(
+                        h.xarray(":HGT:[1234] hybrid level", remove_grib=False)
+                    )
                 except ValueError:
                     logger.warning(f"No data found for {hour}, skipping.")
 
             uv_10 = xr.concat(uv_10, dim="time")
             uv_80 = xr.concat(uv_80, dim="time")
+            uv_hybrid = xr.concat(uv_hybrid, dim="time")
+            hgt_hybrid = xr.concat(hgt_hybrid, dim="time")
 
             ds: xr.Dataset = xr.concat([uv_10, uv_80], dim="heightAboveGround")
-            ds["wind_speed"] = (ds["u"] ** 2 + ds["v"] ** 2) ** 0.5
+            ds = ds.rename({"u": "u_fixed", "v": "v_fixed"})
+            ds["wind_speed_fixed"] = (ds["u_fixed"] ** 2 + ds["u_fixed"] ** 2) ** 0.5
+
+            uv_hybrid = uv_hybrid.rename({"u": "u_hybrid", "v": "v_hybrid"})
+            ds = xr.merge([ds, uv_hybrid, hgt_hybrid])
+
+            del uv_10, uv_80, uv_hybrid, hgt_hybrid
 
             try:
                 del ds.attrs["search"]
