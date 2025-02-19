@@ -1,6 +1,6 @@
 # Copyright 2016-2017 Gorm Andresen (Aarhus University), Jonas Hoersch (FIAS), Tom Brown (FIAS)
 # Copyright 2020 Michael Davidson (UCSD), William Honaker, Jiahe Feng (UCSD), Yuanbo Shi
-# Copyright 2023-2024 Xiqiang Liu
+# Copyright 2023-2025 Xiqiang Liu
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -19,15 +19,11 @@
 Cutout class to handle a subset of a Dataset.
 """
 
-import datetime as dt
 import logging
-import os
-import sys
-from collections.abc import Iterable
 from functools import partial
 from operator import itemgetter
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Sequence, Union
 
 import numpy as np
 import pyproj
@@ -36,9 +32,9 @@ import xarray as xr
 from shapely.geometry import box
 from tqdm.auto import tqdm
 
-
 from . import config
 from .convert import (
+    convert_heat_demand,
     convert_pm25,
     convert_pv,
     convert_solar_thermal,
@@ -47,18 +43,18 @@ from .convert import (
     convert_windwpd,
     get_orientation,
 )
-
-from .resource import (
-    get_solarpanelconfig,
-    get_windturbineconfig,
-    windturbine_smooth,
-)
+from .datasets._base import BaseDataset
 from .mask import Mask
 from .preparation import (
     cutout_get_meta,
     cutout_get_meta_view,
     cutout_prepare,
     cutout_produce_specific_dataseries,
+)
+from .resource import (
+    get_solarpanelconfig,
+    get_windturbineconfig,
+    windturbine_smooth,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,13 +64,15 @@ class Cutout:
     """Cutout class to handle a subset of a Dataset.
 
     Args:
-        module (Literal["era5", "merra2"]): name of the dataset module to use.
-        weather_data_config (str): name of the weather data config to use.
-            the name will be automatically generated.
+        name (str): Name of the cutout. This name will be used to uniquely
+            identify the cutout. If a cutout with the same name already exists,
+            the existing cutout will be retrieved.
+        dataset_cls (type[BaseDataset]): Dataset class to use for the cutout.
         years (slice): years of the cutout.
-        name (Optional[str]): name of the cutout. Optional. If not specified,
-        cutout_dir (str): path to the cutout directory. Defaults to config.cutout_dir.
-        bounds (Optional[Iterable]): bounds of the cutout. Optional. If not specified,
+        cutout_dir (str): path to the cutout directory. This is optional. If not
+            specified, the cutout will be stored in the default cutout directory
+            under `GEODATA_ROOT`.
+        bounds (Optional[Sequence]): bounds of the cutout. Optional. If not specified,
             the bounds will be automatically generated.
         months (Optional[slice]): months of the cutout. Optional. If not specified,
             the months will be automatically generated.
@@ -86,29 +84,28 @@ class Cutout:
 
     def __init__(
         self,
-        module: Literal["era5", "merra2"],
-        weather_data_config: str,
+        name: str,
+        dataset_cls: type[BaseDataset],
         years: slice,
-        name: Optional[str] = None,
         cutout_dir: Union[str, Path] = config.cutout_dir,
-        bounds: Optional[Iterable] = None,
+        bounds: Optional[Sequence] = None,
         months: Optional[slice] = None,
         xs: Optional[slice] = None,
         ys: Optional[slice] = None,
     ):
         self.name = name
-        self.cutout_dir = os.path.join(cutout_dir, name)
+        self.cutout_dir = Path(cutout_dir, name)
+
+        self.dataset_cls = dataset_cls
+
         self.prepared = False
         self.empty = False
-        self.meta_append = 0
-        self.config = weather_data_config
         self.meta = None
         self.merged_mask = None
         self.shape_mask = None
         self.area = None
 
         params_dict = {
-            "module": module,
             "years": years,
             "months": months,
             "xs": xs,
@@ -117,6 +114,7 @@ class Cutout:
 
         if bounds is not None and (xs is not None or ys is not None):
             raise TypeError("Cannot specify both bounds and xs/ys arguments.")
+
         if bounds is not None:
             # if passed bounds array instead of xs, ys slices
             x1, y1, x2, y2 = bounds
@@ -126,39 +124,15 @@ class Cutout:
             logger.info("No months specified, defaulting to 1-12")
             params_dict.update(months=slice(1, 12))
 
-        if os.path.isdir(self.cutout_dir):
+        if self.cutout_dir.is_dir():
+            # Check if cutout directory exists
             # If cutout dir exists, check completness of files
-            if os.path.isfile(self.datasetfn()):  # open existing meta file
-                self.meta = xr.open_dataset(self.datasetfn()).stack(
-                    **{"year-month": ("year", "month")}
+            if self.meta_path.is_file():  # open existing meta file
+                self.meta = xr.open_dataset(self.get_filename()).stack(
+                    dim={"year-month": ("year", "month")}
                 )
 
-            if (
-                self.meta is not None
-                and "years" in params_dict
-                and "months" in params_dict
-                and all(
-                    os.path.isfile(self.datasetfn([y, m]))
-                    for y in range(
-                        params_dict["years"].start, params_dict["years"].stop + 1
-                    )
-                    for m in range(
-                        params_dict["months"].start, params_dict["months"].stop + 1
-                    )
-                )
-            ):
-                # All files are accounted for. Checking basic data and coverage
-                if "module" not in self.meta.attrs:
-                    raise TypeError("No module given in meta file of cutout.")
-
-                # load dataset module based on file metadata
-                from geodata import Dataset
-
-                self.dataset_module: Dataset = sys.modules[
-                    "geodata.datasets." + self.meta.attrs["module"]
-                ]
-                params_dict["module"] = self.meta.attrs["module"]
-
+            if all(self.catalog):
                 logger.info("All cutout (%s, %s) files available.", name, cutout_dir)
 
                 # At least one of xs, ys is in params_dict
@@ -181,118 +155,94 @@ class Cutout:
                 self.prepared = False
                 logger.info("Cutout (%s, %s) not complete.", name, cutout_dir)
 
+        # In case
         if not self.prepared:
-            # Still need to prepare cutout
-            if "module" not in params_dict:
-                raise TypeError("Module is required to create cutout.")
-            # load module from geodata library
-            self.dataset_module = sys.modules[
-                "geodata.datasets." + params_dict["module"]
-            ]
-
             logger.info("Cutout (%s, %s) not found or incomplete.", name, cutout_dir)
 
             if {"xs", "ys", "years"}.difference(params_dict):
                 raise TypeError(
-                    "Arguments `xs`, `ys`, and `years` need to be specified for a cutout."
+                    "Arguments `xs`, `ys`, and `years` need to be specified to create "
+                    "a cutout."
                 )
 
             if self.meta is not None:
                 # if meta.nc exists, close and delete it
                 self.meta.close()
-                os.remove(self.datasetfn())
+                self.meta_path.unlink()
 
-            ## Main preparation call for metadata
-            #    preparation.cutout_get_meta
-            #    cutout.meta_data_config
-            #    dataset_module.meta_data_config (e.g. prepare_meta_era5)
             self.meta = self.get_meta(**params_dict)
-
-            # Ensure cutout directory exists
-            if not os.path.isdir(self.cutout_dir):
-                os.mkdir(self.cutout_dir)
+            self.cutout_dir.mkdir(parents=True, exist_ok=True)
 
             # Write meta file
-            self.meta_clean.unstack("year-month").to_netcdf(self.datasetfn())
+            self.meta_clean.unstack("year-month").to_netcdf(self.meta_path)
 
-    def datasetfn(self, *args):
+    def _get_filename(self, year: int | None = None, month: int | None = None):
         """Return path to dataset xarray files related to this Cutout.
+        If both year and month are None, return path to meta.nc file.
 
         Args:
-            *args: optional arguments to append to the filename. If not specified,
-                the meta file will be returned. If specified, the dataset file will be returned, depending
-                on the number of arguments. One argument will return the dataset file for the given
-                year-month string, two arguments will return the dataset file for the given year and month.
+            year (int): The year to get the filename for. Defaults to None.
+            month (int): The month to get the filename for. Defaults to None.
 
         Returns:
-            str: path to dataset xarray files related to this Cutout.
+            Path: Path to the dataset xarray file.
         """
-        dataset = None
 
-        if len(args) == 2:
-            dataset = args
-        elif len(args) == 1:
-            dataset = args[0]
-        else:
-            dataset = None
-        return os.path.join(
-            # pylint: disable=consider-using-f-string
-            self.cutout_dir,
-            ("meta.nc" if dataset is None else "{}{:0>2}.nc".format(*dataset)),
-            # pylint: enable=consider-using-f-string
-        )
+        if year is None and month is None:
+            return self.cutout_dir / "meta.nc"
+
+        if year is not None:
+            if month is not None:
+                return self.cutout_dir / f"{year}{month:0>2}.nc"
+
+        return self.cutout_dir / f"{year}.nc"
+
+    @property
+    def catalog(self):
+        """A generator that yields all dataset files."""
+
+        for year in self.coords["year"]:
+            for month in self.coords["month"]:
+                yield self._get_filename(year, month)
+
+    @property
+    def meta_path(self):
+        """Path to the metadata file."""
+        return self._get_filename()
 
     @property
     def meta_data_config(self):
         """Metadata configuration for the Cutout"""
 
-        return dict(
-            tasks_func=self.dataset_module.weather_data_config[self.config][
-                "tasks_func"
-            ],
-            prepare_func=self.dataset_module.weather_data_config[self.config][
-                "meta_prepare_func"
-            ],
-            template=self.dataset_module.weather_data_config[self.config]["template"],
-            file_granularity=self.dataset_module.weather_data_config[self.config][
-                "file_granularity"
-            ],
-        )
+        return {
+            "tasks_func": self.dataset_cls.tasks_func,
+            "prepare_func": self.dataset_cls.meta_prepare_func,
+            "file_granularity": self.dataset_cls.frequency,
+        }
 
     @property
-    def weather_data_config(self):
+    def weather_config(self):
         """The weather data configuration for the Cutout."""
-        return self.dataset_module.weather_data_config
 
-    @property
-    def variables(self):
-        """The variables contained in the Cutout."""
-        return self.dataset_module.weather_data_config[self.config]["variables"]
+        return self.dataset_cls.weather_config
 
     @property
     def info(self):
         """Summary information about the Cutout."""
-        return dict(
-            name=self.name,
-            config=self.config,
-            prepared=self.prepared,
-            projection=self.dataset_module.projection,
-            shape=[len(self.coords["y"]), len(self.coords["x"])],
-            extent=(
-                list(self.coords["x"].values[[0, -1]])
-                + list(self.coords["y"].values[[-1, 0]])
-            ),
-            dimensions=self.meta.dims,
-            coordinates=self.meta.coords,
-            variables=self.dataset_module.weather_data_config[self.config]["variables"],
-            dataset_module=self.dataset_module,
-            cutout_dir=self.cutout_dir,
-        )
+        return {
+            "name": self.name,
+            "prepared": self.prepared,
+            "shape": self.shape,
+            "extent": self.extent,
+            "years": self.years,
+            "months": self.months,
+            "meta": self.meta,
+        }
 
     @property
     def projection(self):
         """The projection of the Cutout."""
-        return self.dataset_module.projection
+        return self.dataset_cls.projection
 
     @property
     def coords(self):
@@ -305,7 +255,7 @@ class Cutout:
         meta = self.meta
         if meta.attrs.get("view", {}):
             view = {}
-            for name, value in meta.attrs.get("view", {}).items():
+            for name, value in meta.attrs["view"].items():
                 view.update({name: [value.start, value.stop]})
             meta.attrs["view"] = str(view)
         return meta
@@ -345,7 +295,6 @@ class Cutout:
 
     def __repr__(self):
         yearmonths = self.coords["year-month"].to_index()
-        # pylint: disable=consider-using-f-string
         return "<Cutout {} x={:.2f}-{:.2f} y={:.2f}-{:.2f} time={}/{}-{}/{} {}prepared>".format(
             self.name,
             self.coords["x"].values[0],
@@ -358,7 +307,6 @@ class Cutout:
             yearmonths[-1][1],
             "" if self.prepared else "UN",
         )
-        # pylint: enable=consider-using-f-string
 
     def add_mask(self, name: str, merged_mask: bool = True, shape_mask: bool = True):
         """Add mask attribute to the cutout, from a previously saved mask objects.
@@ -500,7 +448,7 @@ class Cutout:
         return res
 
     # Preparation functions
-    get_meta = cutout_get_meta  # preparation.cutout_get_meta
+    get_meta = cutout_get_meta
     get_meta_view = cutout_get_meta_view  # preparation.cutout_get_meta_view
     prepare = cutout_prepare  # preparation.cutout_prepare
     produce_specific_dataseries = cutout_produce_specific_dataseries
@@ -539,12 +487,12 @@ class Cutout:
                 if convert_func.__name__.startswith("convert_")
                 else convert_func.__name__
             )
-            prefix = f"Convert `{func_name}`: "
+            prefix = f"Convert {func_name}"
 
         for ym in tqdm(
             yearmonths, desc=prefix, disable=not show_progress, dynamic_ncols=True
         ):
-            with xr.open_dataset(self.datasetfn(ym)) as ds:
+            with xr.open_dataset(self._get_filename(ym)) as ds:
                 if "view" in self.meta.attrs:
                     if isinstance(self.meta.attrs["view"], str):
                         self.meta.attrs["view"] = {}
@@ -607,25 +555,6 @@ class Cutout:
             You can also specify all of the general conversion arguments
             documented in the `convert_cutout` function.
         """
-
-        def convert_heat_demand(
-            ds: xr.Dataset,
-            threshold: float,
-            a: float,
-            constant: float,
-            hour_shift: float,
-        ):
-            # Temperature is in Kelvin; take daily average
-            T = ds["temperature"]
-            T.coords["time"].values += np.timedelta64(dt.timedelta(hours=hour_shift))
-
-            T = ds["temperature"].resample(time="1D").mean(dim="time")
-            threshold += 273.15
-            heat_demand_value = a * (threshold - T)
-
-            heat_demand_value.values[heat_demand_value.values < 0.0] = 0.0
-
-            return constant + heat_demand_value
 
         return self._convert_cutout(
             convert_func=convert_heat_demand,
@@ -715,33 +644,22 @@ class Cutout:
             **params,
         )
 
-    # NOTE: The following wind-related functions will be deprecated in the future
-    # in favor of the wind modeling module.
     def wind(
-        self, turbine: Union[str, dict], smooth: Union[bool, dict] = False, **params
+        self,
+        turbine: Union[str, dict],
+        method: Literal["simple", "interpolation", "extrapolation"],
+        smooth: Union[bool, dict] = False,
+        **params,
     ):
-        """
-        Generate wind generation time-series
-
-        - loads turbine dict based on passed parameters  	(resource.get_windturbineconfig)
-        - optionally, smooths turbine power curve 			(resource.windturbine_smooth)
-        - calls convert_wind								(convert.convert_cutout)
+        """Convert wind speed time-series into wind generation time-series.
 
         Args:
-            turbine (Union[str, dict]): Name of a turbine known by the reatlas client or a
-                turbineconfig dictionary with the keys 'hub_height' for the
-                hub height and 'V', 'POW' defining the power curve.
-            smooth (Union[bool, dict]): If True smooth power curve with a gaussian kernel as
-                determined for the Danish wind fleet to Delta_v = 1.27 and
-                sigma = 2.s29. A dict allows to tune these values.
-
-        Note:
-            You can also specify all of the general conversion arguments
-            documented in the `convert_cutout` function.
-
-        References:
-            [1] Andresen G B, Søndergaard A A and Greiner M 2015 Energy 93, Part 1
-            1074 - 1088. doi:10.1016/j.energy.2015.09.071
+            turbine (Union[str, dict]): Name of a turbine or a dictionary with the parameters
+                for the wind turbine in [2].
+            smooth (Union[bool, dict]): If True, the wind speed time-series will be smoothed
+                before conversion. If False, no smoothing will be applied. If a dictionary is
+                passed, the smoothing parameters will be used.
+            **params: Keyword arguments passed to `convert_cutout` function
         """
 
         if isinstance(turbine, str):
@@ -750,9 +668,14 @@ class Cutout:
         if smooth:
             turbine = windturbine_smooth(turbine, params=smooth)
 
-        return self._convert_cutout(
-            convert_func=convert_wind, turbine=turbine, **params
-        )
+        match method:
+            case "simple":
+                return self._convert_cutout(
+                    convert_func=convert_wind, turbine=turbine, **params
+                )
+
+            case _:
+                raise ValueError(f"Method {method} not supported.")
 
     def windspd(self, **params):
         """
@@ -892,13 +815,8 @@ class Cutout:
         Generate PM2.5 time series 	[ug / m3]
         (see convert_pm25 for details)
 
-        Parameters
-        ----------
-        **params : None needed currently.
-
-        Returns
-        -------
-        pm25 : xr.DataArray
+        Returns:
+            xr.DataArray: PM2.5 time series
 
         """
 
@@ -946,7 +864,7 @@ def _find_intercept(list1, list2, start, threshold=0):
     if min_res == init:
         return 0
     else:
-        return i  # type: ignore
+        return i
 
 
 def coarsen(ori: xr.Dataset, tar: xr.Dataset, func: Literal["sum", "mean"] = "mean"):
@@ -998,7 +916,7 @@ def coarsen(ori: xr.Dataset, tar: xr.Dataset, func: Literal["sum", "mean"] = "me
     else:
         raise ValueError("func can only be 'mean' or 'sum'")
 
-    return coarsen.reindex_like(tar, method="nearest")
+    return _coarsen.reindex_like(tar, method="nearest")
 
 
 def calc_grid_area(lis_lats_lons):

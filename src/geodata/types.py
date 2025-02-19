@@ -17,4 +17,4 @@ DateRange = slice | tuple[int, int] | list[int]
 CoordRange = slice | tuple[float, float] | list[float]
 BoundRange = tuple[float, float, float, float] | list[float]
 
-__all__ = ["DateRange", "CoordRange"]
+__all__ = ["DateRange", "CoordRange", "BoundRange"]

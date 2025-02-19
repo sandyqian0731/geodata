@@ -351,6 +351,14 @@ class BaseDataset(abc.ABC):
         """
 
     @property
+    @abc.abstractmethod
+    def lat_direction(self) -> bool:
+        """Latitude direction stored in the dataset. This should be a boolean flag.
+        If True, the latitude increases from south to north. If False, the latitude
+        increases from north to south.
+        """
+
+    @property
     def extra_repr(self):
         return ""
 
@@ -375,6 +383,16 @@ class BaseDataset(abc.ABC):
         to the name of the dataset class.
         """
         return getattr(self, "weather_config", self.__class__.__name__)
+
+    @staticmethod
+    @abc.abstractmethod
+    def tasks_func():
+        """A method that returns a list of tasks that can be run on the dataset."""
+
+    @staticmethod
+    @abc.abstractmethod
+    def meta_prepare_func():
+        """A method that returns a list of metadata preparation tasks."""
 
     @property
     def catalog(self) -> list["AtomicDataset"]:
@@ -428,30 +446,6 @@ class BaseDataset(abc.ABC):
                 catalog.append(AtomicDataset(self, year, month, day))
 
         return catalog
-
-    # def _hourly_catalog(self):
-    #     catalog = []
-
-    #     for year, month in itertools.product(
-    #         range(self.years.start, self.years.stop + 1),
-    #         range(self.months.start, self.months.stop + 1),
-    #     ):
-    #         for day in range(1, pd.Timestamp(f"{year}-{month}-1").days_in_month + 1):
-    #             for hour in range(24):
-    #                 save_path = (
-    #                     self.storage_root
-    #                     / f"{year}_{month:02d}_{day:02d}_{hour:02d}.nc"
-    #                 )
-    #                 catalog.append(
-    #                     {
-    #                         "year": year,
-    #                         "month": month,
-    #                         "day": day,
-    #                         "hour": hour,
-    #                         "save_path": save_path,
-    #                     }
-    #                 )
-    #     return catalog
 
     def _rename_and_clean_coords(self, ds: xr.Dataset, add_lon_lat: bool = False):
         """Rename 'lon'/'longitude' and 'lat'/'latitude' columns to 'x' and 'y'

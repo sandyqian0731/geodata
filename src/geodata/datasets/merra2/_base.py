@@ -32,6 +32,7 @@ class MERRA2BaseDataset(BaseDataset):
 
     module = "merra2"
     projection = "latlong"
+    lat_direction = True
     frequency = "daily"
     url_template = ""
 

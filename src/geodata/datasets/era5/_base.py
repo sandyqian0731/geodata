@@ -28,6 +28,7 @@ class ERA5BaseDataset(BaseDataset):
 
     module = "era5"
     projection = "latlong"
+    lat_direction = False
 
     def _extra_setup(self, **kwargs):
         self.logger = logging.getLogger(__name__.replace("._base", ".client"))
