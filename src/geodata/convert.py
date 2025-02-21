@@ -1,4 +1,5 @@
 # Copyright 2016-2017 Gorm Andresen (Aarhus University), Jonas Hoersch (FIAS), Tom Brown (FIAS)
+# Copyright 2025 Xiqiang Liu, Michael Davidson (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -74,7 +75,7 @@ def convert_solar_thermal(
 
     output = irradiation * eta
 
-    return (output).where(output > 0.0).fillna(0.0)
+    return output.where(output > 0.0).fillna(0.0)
 
 
 def convert_pv(ds, panel, orientation, trigon_model="simple", clearsky_model="simple"):

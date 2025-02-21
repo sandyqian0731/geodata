@@ -33,6 +33,8 @@ import xarray as xr
 
 if TYPE_CHECKING:
     from geodata.cutout import Cutout
+else:
+    Cutout = object
 
 logger = logging.getLogger(__name__)
 

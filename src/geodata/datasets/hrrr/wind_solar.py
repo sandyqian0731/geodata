@@ -67,11 +67,20 @@ class HRRRHourlyDataset(HRRRBaseDataset):
         with redirect_stdout_to_logger(logger, logging.INFO):
             fh.download(":[UV]GRD:[1,8]0 m")
             fh.download(":TMP:2 m")
+            fh.download(":..WRF:surface")
+            fh.download(":TCDC:entire atmosphere")
+            fh.download(":LCDC:low cloud layer")
+            fh.download(":MCDC:middle cloud layer")
+            fh.download(":HCDC:high cloud layer")
 
             uv_10 = []
             uv_80 = []
             tmp_2 = []
             wrfs = []
+            tcdc = []
+            lcdc = []
+            mcdc = []
+            hcdc = []
 
             for hour in date_range:
                 h = Herbie(
@@ -95,6 +104,26 @@ class HRRRHourlyDataset(HRRRBaseDataset):
                     wrfs.append(
                         self._preprocess_individual_herbie(h, ":..WRF:surface", hour)
                     )
+                    tcdc.append(
+                        self._preprocess_individual_herbie(
+                            h, ":TCDC:entire atmosphere", hour
+                        )
+                    )
+                    lcdc.append(
+                        self._preprocess_individual_herbie(
+                            h, ":LCDC:low cloud layer", hour
+                        )
+                    )
+                    mcdc.append(
+                        self._preprocess_individual_herbie(
+                            h, ":MCDC:middle cloud layer", hour
+                        )
+                    )
+                    hcdc.append(
+                        self._preprocess_individual_herbie(
+                            h, ":HCDC:high cloud layer", hour
+                        )
+                    )
 
                 except ValueError:
                     logger.warning(f"No data found for {hour}, skipping.")
@@ -113,8 +142,22 @@ class HRRRHourlyDataset(HRRRBaseDataset):
             wrfs: xr.Dataset = xr.open_mfdataset(
                 wrfs, concat_dim="time", chunks="auto", combine="nested"
             )
+            tcdc: xr.Dataset = xr.open_mfdataset(
+                tcdc, concat_dim="time", chunks="auto", combine="nested"
+            )
+            lcdc: xr.Dataset = xr.open_mfdataset(
+                lcdc, concat_dim="time", chunks="auto", combine="nested"
+            )
+            mcdc: xr.Dataset = xr.open_mfdataset(
+                mcdc, concat_dim="time", chunks="auto", combine="nested"
+            )
+            hcdc: xr.Dataset = xr.open_mfdataset(
+                hcdc, concat_dim="time", chunks="auto", combine="nested"
+            )
 
-            ds = xr.merge([uv_10, uv_80, tmp_2, wrfs], compat="override")
+            ds = xr.merge(
+                [uv_10, uv_80, tmp_2, wrfs, lcdc, tcdc, mcdc, hcdc], compat="override"
+            )
 
             try:
                 del ds["heightAboveGround"]
@@ -122,6 +165,11 @@ class HRRRHourlyDataset(HRRRBaseDataset):
                 del ds.attrs["local_grib"]
                 del ds.attrs["remote_grib"]
                 del ds.coords["gribfile_projection"]
+                del ds.coords["surface"]
+                del ds.coords["lowCloudLayer"]
+                del ds.coords["middleCloudLayer"]
+                del ds.coords["highCloudLayer"]
+                del ds.coords["atmosphere"]
             except KeyError:
                 pass
 

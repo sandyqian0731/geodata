@@ -38,6 +38,10 @@ class HRRRBaseDataset(BaseDataset):
     frequency = "daily"
     _priority = ["google", "aws", "azure"]
 
+    lat_direction = True
+    meta_prepare_func = None
+    tasks_func = None
+
     def _extra_setup(self, **kwargs):
         self._herbie_save_dir = tempfile.TemporaryDirectory()
 
