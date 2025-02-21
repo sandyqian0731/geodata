@@ -292,11 +292,17 @@ class BaseDataset(abc.ABC):
         # Post-process the dataset
         for file in tqdm(self.catalog, unit="file", dynamic_ncols=True):
             if file.check():
-                ds = xr.open_dataset(file.path)
+                ds = xr.open_dataset(file.path).chunk()
                 ds = self._rename_and_clean_coords(ds)
                 ds = self._dataset_postprocess(ds)
-                ds.to_netcdf(file.path)
+
+                # xarray does not support overwriting files, so we must save the
+                # dataset to a new file and then rename it backwards
+                ds.to_netcdf(file.path.with_stem(file.path.stem + "_postprocessed"))
                 ds.close()
+
+                file.path.unlink()
+                file.path.with_stem(file.path.stem + "_postprocessed").rename(file.path)
 
     def _dataset_postprocess(self, ds: xr.Dataset | xr.DataArray, **kwargs):
         """Method to postprocess the dataset after it has been downloaded.

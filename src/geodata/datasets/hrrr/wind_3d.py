@@ -15,6 +15,7 @@
 
 import logging
 import multiprocessing as mp
+import os
 
 import pandas as pd
 import xarray as xr
@@ -33,15 +34,15 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
     and storing of these datasets.
 
     Variables:
-        - u_fixed: zonal wind speed at 10m and 80m
-        - v_fixed: meridional wind speed at 10m and 80m
-        - wind_speed_fixed: wind speed at 10m and 80m
-        - u_hybrid: zonal wind speed at hybrid levels (variable across locations)
-        - v_hybrid: meridional wind speed at hybrid levels (variable across locations)
+        - u: zonal wind component
+        - v: meridional wind component
+        - gh: geopotential height
 
     Important Coordinates:
-        - heightAboveGround: height above ground level of the fixed levels
-        - hybrid: hybrid level of the hybrid levels (fixed 1,2,3,4)
+        - time: time of the observation
+        - level: hybrid pressure level
+        - y: latitude
+        - x: longitude
     """
 
     weather_config = "wind_3d"
@@ -102,19 +103,60 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
                 except ValueError:
                     logger.warning(f"No data found for {hour}, skipping.")
 
-            uv_10 = xr.concat(uv_10, dim="time")
-            uv_80 = xr.concat(uv_80, dim="time")
-            uv_hybrid = xr.concat(uv_hybrid, dim="time")
-            hgt_hybrid = xr.concat(hgt_hybrid, dim="time")
+            # Offload to disk temporarily to save memory
+            xr.concat(uv_10, dim="time").to_netcdf(
+                os.path.join(self._herbie_save_dir.name, "uv_10.nc")
+            )
+            del uv_10
+            xr.concat(uv_80, dim="time").to_netcdf(
+                os.path.join(self._herbie_save_dir.name, "uv_80.nc")
+            )
+            del uv_80
+            xr.concat(uv_hybrid, dim="time").to_netcdf(
+                os.path.join(self._herbie_save_dir.name, "uv_hybrid.nc")
+            )
+            del uv_hybrid
+            xr.concat(hgt_hybrid, dim="time").to_netcdf(
+                os.path.join(self._herbie_save_dir.name, "hgt_hybrid.nc")
+            )
+            del hgt_hybrid
+
+            uv_10 = xr.open_dataset(
+                os.path.join(self._herbie_save_dir.name, "uv_10.nc"), chunks="auto"
+            )
+            uv_80 = xr.open_dataset(
+                os.path.join(self._herbie_save_dir.name, "uv_80.nc"), chunks="auto"
+            )
+            uv_hybrid = xr.open_dataset(
+                os.path.join(self._herbie_save_dir.name, "uv_hybrid.nc"), chunks="auto"
+            )
+            hgt_hybrid = xr.open_dataset(
+                os.path.join(self._herbie_save_dir.name, "hgt_hybrid.nc"), chunks="auto"
+            )
 
             ds: xr.Dataset = xr.concat([uv_10, uv_80], dim="heightAboveGround")
-            ds = ds.rename({"u": "u_fixed", "v": "v_fixed"})
-            ds["wind_speed_fixed"] = (ds["u_fixed"] ** 2 + ds["u_fixed"] ** 2) ** 0.5
+            heights = ds["heightAboveGround"].broadcast_like(ds["u"])
 
-            uv_hybrid = uv_hybrid.rename({"u": "u_hybrid", "v": "v_hybrid"})
-            ds = xr.merge([ds, uv_hybrid, hgt_hybrid])
+            ds["u"] = xr.concat(
+                [ds["u"].rename({"heightAboveGround": "hybrid"}), uv_hybrid["u"]],
+                dim="hybrid",
+            )
+            ds["v"] = xr.concat(
+                [ds["v"].rename({"heightAboveGround": "hybrid"}), uv_hybrid["v"]],
+                dim="hybrid",
+            )
+            del ds["heightAboveGround"]
 
-            del uv_10, uv_80, uv_hybrid, hgt_hybrid
+            ds["gh"] = xr.concat(
+                [heights.rename({"heightAboveGround": "hybrid"}), hgt_hybrid["gh"]],
+                dim="hybrid",
+            ).astype("float32")
+            ds = ds.rename({"hybrid": "level"}).sortby("level")
+
+            ds["level"].values[-2:] = [-1, -2]
+            ds["level"] = ds["level"].astype("int8")
+
+            ds = ds.sortby("level")
 
             try:
                 del ds.attrs["search"]
