@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from . import hourly, monthly
+from .wind_3d import HRRR3DWindHourlyDataset
+from .wind_solar import HRRRHourlyDataset
 
-__all__ = ["hourly", "monthly"]
+__all__ = ["HRRRHourlyDataset", "HRRR3DWindHourlyDataset"]

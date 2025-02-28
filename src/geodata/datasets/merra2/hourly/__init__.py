@@ -13,6 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from . import hourly, monthly
+from .surface_flux import MERRA2SurfaceFluxHourlyDataset
 
-__all__ = ["hourly", "monthly"]
+__all__ = ["MERRA2SurfaceFluxHourlyDataset"]
