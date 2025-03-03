@@ -139,29 +139,15 @@ def cutout_prepare(
         def datasetfn_with_id(ym):
             # returns a filename with incrementing id at end eg `201101-01.nc`
             filename = cutout._get_filename(ym)
-
-            base = filename.stem
-            ext = filename.suffix
-
-            return f"{base}-{i}{ext}"
+            return filename.with_stem(f"{filename.stem}-{i:02d}")
 
         t["filenames"] = {ym: datasetfn_with_id(ym) for ym in yearmonths.tolist()}
 
-    # TODO: Using multiple processes will cause issues with geodata currently
-    # because geodata write the metadata dataframe to the cutout directory
-    # in every instantiation of a new Cutout object in an unprepared state.
-    # By running multiple processes, the metadata file will be overwritten
-    # and there are no locking mechanism currently in place.
-    # As the result, we will run the tasks in a single process for now.
-    # In the future, we can consider doing it in a multiprocessing scheme as long as
-    # we can ensure that the metadata file is being processed in places other than
-    # the constructor.
-
-    # logger.info(
-    #     "%d tasks have been collected. Starting running them on %s.",
-    #     len(tasks),
-    #     f"{nprocesses} processes" if nprocesses is not None else "all processors",
-    # )
+    logger.info(
+        "%d tasks have been collected. Starting running them on %s.",
+        len(tasks),
+        f"{nprocesses} processes" if nprocesses is not None else "all processors",
+    )
 
     with Pool(processes=nprocesses) as pool:
         try:
@@ -180,7 +166,7 @@ def cutout_prepare(
 
     for fn in [cutout._get_filename(ym) for ym in yearmonths.tolist()]:
         # Find all files with yearmonth prefix eg `201101-XX.nc`
-        fns = list(cutout_dir.rglob(f"{fn.stem}-*.{fn.suffix}"))
+        fns = list(cutout_dir.rglob(f"{fn.stem}-*{fn.suffix}"))
 
         if len(fns) == 1 and not gebco_height:
             # Just a single file. Simply rename

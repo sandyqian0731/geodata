@@ -20,13 +20,14 @@ import itertools
 import logging
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 import xarray as xr
 from tqdm.auto import tqdm
 
 from ..config import DATASET_ROOT_PATH
-from ..types import BoundRange, DateRange
+from ..types import BoundRange, CoordRange, DateRange
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,7 @@ class BaseDataset(abc.ABC):
 
     module: str
     weather_config: str
-    frequency: str = "monthly"
+    frequency: Literal["hourly", "daily", "monthly"] = "monthly"
 
     def __init__(
         self,
@@ -196,11 +197,7 @@ class BaseDataset(abc.ABC):
                 raise ValueError("Latitude bounds must be between -90 and 90")
         self.bounds = bounds
 
-        self.storage_root = (
-            Path(kwargs.get("dataset_root", DATASET_ROOT_PATH))
-            / self.module
-            / self.weather_config
-        )
+        self.storage_root = DATASET_ROOT_PATH / self.module / self.weather_config
         if not self.storage_root.exists():
             logger.info(
                 f"Storage directory for {self.__class__.__name__} does not exist, "
@@ -253,18 +250,12 @@ class BaseDataset(abc.ABC):
         return all((file.check() for file in self.catalog))
 
     @abc.abstractmethod
-    def _download_file(self, file: dict):
+    def _download_file(self, file: AtomicDataset):
         """Method to download a single file from the dataset. This method
         should download the file and save it to the appropriate location.
 
         Args:
-            file: A dictionary containing the metadata of the file to download. At the
-            minimum, this dictionary should contain the following keys:
-                - year: the year of the file
-                - month: the month of the file
-                - day: the day of the file (if applicable)
-                - hour: the hour of the file (if applicable)
-                - save_path: the path where the file should be saved
+            file: An instance of AtomicDataset representing the file to download.
         """
 
     def download(self, force: bool = False):
@@ -392,13 +383,27 @@ class BaseDataset(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def tasks_func():
+    def tasks_func(
+        cls,
+        xs: CoordRange,
+        ys: CoordRange,
+        yearmonths: xr.DataArray,
+        prepare_func,
+        **meta_attrs,
+    ):
         """A method that returns a list of tasks that can be run on the dataset."""
 
     @staticmethod
     @abc.abstractmethod
-    def meta_prepare_func():
-        """A method that returns a list of metadata preparation tasks."""
+    def meta_prepare_func(cls, xs: slice, ys: slice, year: int, month: int, **kwargs):
+        """A method that generates the metadata for the cutout."""
+
+    @staticmethod
+    @abc.abstractmethod
+    def prepare_func(
+        fn: str | Path, year: int, month: int, xs: CoordRange, ys: CoordRange, **kwargs
+    ):
+        """A method that prepares the cutout for individual dataset."""
 
     @property
     def catalog(self) -> list["AtomicDataset"]:
@@ -476,7 +481,34 @@ class BaseDataset(abc.ABC):
         if "lon" in ds.coords:
             ds = ds.rename({"lon": "x"})
 
+        # Flatten x and y if they are multi-dimensional
+        if ds.coords["x"].ndim > 1:
+            ds = ds.assign_coords(x=("x", ds.coords["x"][0].values))
+        if ds.coords["y"].ndim > 1:
+            ds = ds.assign_coords(y=("y", ds.coords["y"][:, 0].values))
+
         if add_lon_lat:
             ds = ds.assign_coords(lon=ds.coords["x"], lat=ds.coords["y"])
 
         return ds
+
+    @classmethod
+    def _get_files(cls, year: int, month: int):
+        """Get the path where the file should be saved. Internal method used by Cutouts.
+
+        Args:
+            year: The year of the file.
+            month: The month of the file.
+        """
+
+        storage_root = DATASET_ROOT_PATH / cls.module / cls.weather_config
+
+        match cls.frequency:
+            case "monthly":
+                return [storage_root / str(year) / f"{month:02d}.nc"]
+            case "daily":
+                return list((storage_root / str(year) / f"{month:02d}").glob("*.nc"))
+            case _:
+                raise ValueError(
+                    f"Invalid frequency {cls.frequency} defined for this dataset."
+                )

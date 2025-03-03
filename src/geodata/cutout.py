@@ -23,7 +23,7 @@ import logging
 from functools import partial
 from operator import itemgetter
 from pathlib import Path
-from typing import Literal, Optional, Sequence, Union
+from typing import Literal, Optional, Union
 
 import numpy as np
 import pyproj
@@ -51,11 +51,9 @@ from .preparation import (
     cutout_prepare,
     cutout_produce_specific_dataseries,
 )
-from .resource import (
-    get_solarpanelconfig,
-    get_windturbineconfig,
-    windturbine_smooth,
-)
+from .resource import get_solarpanelconfig, get_windturbineconfig, windturbine_smooth
+from .types import BoundRange, DateRange
+from .utils import ensure_slice
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +84,12 @@ class Cutout:
         self,
         name: str,
         dataset_cls: type[BaseDataset],
-        years: slice,
+        years: DateRange,
         cutout_dir: Union[str, Path] = config.cutout_dir,
-        bounds: Optional[Sequence] = None,
-        months: Optional[slice] = None,
-        xs: Optional[slice] = None,
-        ys: Optional[slice] = None,
+        bounds: Optional[BoundRange] = None,
+        months: Optional[DateRange] = None,
+        xs: Optional[BoundRange] = None,
+        ys: Optional[BoundRange] = None,
     ):
         self.name = name
         self.cutout_dir = Path(cutout_dir, name)
@@ -106,12 +104,14 @@ class Cutout:
         self.area = None
 
         params_dict = {
-            "years": years,
+            "years": ensure_slice(years),
             "months": months,
             "xs": xs,
             "ys": ys,
         }
 
+        if bounds is None and (xs is None and ys is None):
+            raise TypeError("Either bounds or xs/ys arguments must be specified.")
         if bounds is not None and (xs is not None or ys is not None):
             raise TypeError("Cannot specify both bounds and xs/ys arguments.")
 
@@ -123,16 +123,15 @@ class Cutout:
         if months is None:
             logger.info("No months specified, defaulting to 1-12")
             params_dict.update(months=slice(1, 12))
+        params_dict["months"] = ensure_slice(months)
 
-        if self.cutout_dir.is_dir():
-            # Check if cutout directory exists
-            # If cutout dir exists, check completness of files
-            if self.meta_path.is_file():  # open existing meta file
-                self.meta = xr.open_dataset(self.get_filename()).stack(
-                    dim={"year-month": ("year", "month")}
-                )
+        self.prepared = False
+        if self.cutout_dir.is_dir() and self.meta_path.is_file():
+            self.meta = xr.open_dataset(self._get_filename()).stack(
+                dim={"year-month": ("year", "month")}
+            )
 
-            if all(self.catalog):
+            if all(f.is_file() for f in self.catalog):
                 logger.info("All cutout (%s, %s) files available.", name, cutout_dir)
 
                 # At least one of xs, ys is in params_dict
@@ -143,40 +142,36 @@ class Cutout:
                         # Subset is available
                         self.prepared = True
                         logger.info("Cutout subset prepared: %s", self)
+                        return
                     else:
                         logger.info("Cutout subset not available: %s", self)
                 else:
                     # No subsetting of bounds. Keep full cutout
                     self.prepared = True
                     logger.info("Cutout prepared: %s", self)
+                    return
 
-            else:
-                #   Not all files accounted for
-                self.prepared = False
-                logger.info("Cutout (%s, %s) not complete.", name, cutout_dir)
+        logger.info("Cutout (%s, %s) not complete.", name, cutout_dir)
+        if {"xs", "ys", "years"}.difference(params_dict):
+            raise TypeError(
+                "Arguments `xs`, `ys`, and `years` need to be specified to create "
+                "a cutout."
+            )
 
-        # In case
-        if not self.prepared:
-            logger.info("Cutout (%s, %s) not found or incomplete.", name, cutout_dir)
+        if self.meta is not None:
+            # if meta.nc exists, close and delete it
+            self.meta.close()
+            self.meta_path.unlink()
 
-            if {"xs", "ys", "years"}.difference(params_dict):
-                raise TypeError(
-                    "Arguments `xs`, `ys`, and `years` need to be specified to create "
-                    "a cutout."
-                )
+        self.meta = self.get_meta(**params_dict)
+        self.cutout_dir.mkdir(parents=True, exist_ok=True)
 
-            if self.meta is not None:
-                # if meta.nc exists, close and delete it
-                self.meta.close()
-                self.meta_path.unlink()
+        # Write meta file
+        self.meta_clean.unstack("year-month").to_netcdf(self.meta_path)
 
-            self.meta = self.get_meta(**params_dict)
-            self.cutout_dir.mkdir(parents=True, exist_ok=True)
-
-            # Write meta file
-            self.meta_clean.unstack("year-month").to_netcdf(self.meta_path)
-
-    def _get_filename(self, year: int | None = None, month: int | None = None):
+    def _get_filename(
+        self, year: int | tuple[int, int] | None = None, month: int | None = None
+    ):
         """Return path to dataset xarray files related to this Cutout.
         If both year and month are None, return path to meta.nc file.
 
@@ -192,10 +187,10 @@ class Cutout:
             return self.cutout_dir / "meta.nc"
 
         if year is not None:
-            if month is not None:
-                return self.cutout_dir / f"{year}{month:0>2}.nc"
+            if month is None:
+                year, month = year
 
-        return self.cutout_dir / f"{year}.nc"
+        return self.cutout_dir / f"{year}{month:0>2}.nc"
 
     @property
     def catalog(self):

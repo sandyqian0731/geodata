@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import logging
+from calendar import monthrange
 
 import numpy as np
 import requests
@@ -20,6 +22,38 @@ import xarray as xr
 
 from ...types import CoordRange
 from .._base import AtomicDataset, BaseDataset
+
+logger = logging.getLogger(__name__)
+
+
+def _convert_and_subset_lons_lats_merra2(
+    ds: xr.Dataset, xs: CoordRange, ys: CoordRange
+):
+    if not isinstance(xs, slice):
+        first, second, last = np.asarray(xs)[[0, 1, -1]]
+        xs = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
+    if not isinstance(ys, slice):
+        first, second, last = np.asarray(ys)[[0, 1, -1]]
+        ys = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
+
+    ds = ds.sel(y=ys)
+
+    # Lons should go from -180. to +180.
+    if len(ds.coords["x"].sel(x=slice(xs.start + 360.0, xs.stop + 360.0))):
+        ds = xr.concat(
+            [ds.sel(x=slice(xs.start + 360.0, xs.stop + 360.0)), ds.sel(x=xs)], dim="x"
+        )
+        ds = ds.assign_coords(
+            lon=np.where(
+                ds.coords["x"].values <= 180,
+                ds.coords["x"].values,
+                ds.coords["x"].values - 360.0,
+            )
+        )
+    else:
+        ds = ds.sel(x=xs)
+
+    return ds.assign_coords(lon=ds.coords["x"], lat=ds.coords["y"])
 
 
 class MERRA2BaseDataset(BaseDataset):
@@ -76,47 +110,6 @@ class MERRA2BaseDataset(BaseDataset):
 
         return spinup
 
-    def convert_and_subset_lons_lats_merra2(
-        ds: xr.Dataset | xr.DataArray, xs: CoordRange, ys: CoordRange
-    ) -> xr.Dataset | xr.DataArray:
-        """Rename geographic dimensions to x,y. Subset x,y according to xs, ys.
-
-        Args:
-            ds (xr.Dataset | xr.DataArray): The dataset to subset
-            xs (slice): The slice of longitudes to subset
-            ys (slice): The slice of latitudes to subset
-
-        Returns:
-            xr.Dataset | xr.DataArray: The subsetted dataset
-        """
-
-        if not isinstance(xs, slice):
-            first, second, last = np.asarray(xs)[[0, 1, -1]]
-            xs = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
-        if not isinstance(ys, slice):
-            first, second, last = np.asarray(ys)[[0, 1, -1]]
-            ys = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
-
-        ds = ds.sel(lat=ys)
-
-        # Longitudes should go from -180. to +180.
-        if len(ds.coords["lon"].sel(lon=slice(xs.start + 360.0, xs.stop + 360.0))):
-            ds = xr.concat(
-                [ds.sel(lon=slice(xs.start + 360.0, xs.stop + 360.0)), ds.sel(lon=xs)],
-                dim="lon",
-            )
-            ds = ds.assign_coords(
-                lon=np.where(
-                    ds.coords["lon"].values <= 180,
-                    ds.coords["lon"].values,
-                    ds.coords["lon"].values - 360.0,
-                )
-            )
-        else:
-            ds = ds.sel(lon=xs)
-
-        return super()._rename_and_clean_coords(ds)
-
     def _daily_catalog(self):
         if not self.url_template:
             raise NotImplementedError("url_template is not defined for this dataset")
@@ -128,3 +121,72 @@ class MERRA2BaseDataset(BaseDataset):
             file.url = self.url_template.format(**vars(file))
 
         return catalog
+
+    @classmethod
+    def meta_prepare_func(
+        cls, xs: CoordRange, ys: CoordRange, year: int, month: int, **params
+    ):
+        with xr.open_mfdataset(cls._get_files(year, month), combine="by_coords") as ds:
+            ds = ds.coords.to_dataset()
+            ds = _convert_and_subset_lons_lats_merra2(ds, xs, ys)
+            meta = ds.load()
+
+        return meta
+
+    @classmethod
+    def tasks_func(
+        cls,
+        xs: CoordRange,
+        ys: CoordRange,
+        yearmonths: xr.DataArray,
+        prepare_func: callable,
+        **meta_attrs,
+    ):
+        if not isinstance(xs, slice):
+            xs = slice(*xs.values[[0, -1]])
+        if not isinstance(ys, slice):
+            ys = slice(*ys.values[[0, -1]])
+        fn = meta_attrs["fn"]
+
+        match cls.frequency:
+            case "daily":
+                logger.info(yearmonths)
+                logger.info(
+                    [
+                        (year, month, day)
+                        for year, month in yearmonths
+                        for day in range(1, monthrange(year, month)[1] + 1, 1)
+                    ]
+                )
+
+                return [
+                    dict(
+                        prepare_func=prepare_func,
+                        xs=xs,
+                        ys=ys,
+                        year=year,
+                        month=month,
+                        fn=fn.format(
+                            year=year,
+                            month=month,
+                            day=day,
+                            spinup=cls.spinup_year(year, month),
+                        ),
+                    )
+                    for year, month in yearmonths
+                    for day in range(1, monthrange(year, month)[1] + 1, 1)
+                ]
+            case "monthly":
+                return [
+                    dict(
+                        prepare_func=prepare_func,
+                        xs=xs,
+                        ys=ys,
+                        year=year,
+                        month=month,
+                        fn=fn.format(year=year, month=month),
+                    )
+                    for year, month in yearmonths
+                ]
+            case _:
+                raise NotImplementedError("Frequency not supported")

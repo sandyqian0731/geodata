@@ -18,31 +18,6 @@ import json
 
 import numpy as np
 import pandas as pd
-import progressbar as pgb
-
-
-def make_optional_progressbar(show, prefix, max_value):
-    if show:
-        widgets = [
-            pgb.widgets.Percentage(),
-            " ",
-            pgb.widgets.SimpleProgress(),
-            " ",
-            pgb.widgets.Bar(),
-            " ",
-            pgb.widgets.Timer(),
-            " ",
-            pgb.widgets.ETA(),
-        ]
-        if not prefix.endswith(": "):
-            prefix = prefix.strip() + ": "
-        maybe_progressbar = pgb.ProgressBar(
-            prefix=prefix, widgets=widgets, max_value=max_value
-        )
-    else:
-        maybe_progressbar = lambda x: x  # noqa: E731
-
-    return maybe_progressbar
 
 
 def dummy_njit(f=None, *args, **kwargs):
@@ -69,7 +44,7 @@ def get_daterange(years: slice, months: slice):
         months (slice): The months range.
 
     Returns:
-        pd.
+        pd.DatetimeIndex: The date range.
     """
 
     assert years.start <= years.stop, "Start year must be less than stop year."
@@ -95,3 +70,20 @@ class NpEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
+
+
+def ensure_slice(obj: slice | list):
+    """Ensure that the input is a slice object. If the input is a list, convert it to a slice object.
+
+    Args:
+        obj (slice | list): The input object.
+
+    Returns:
+        slice: The converted slice object.
+    """
+    if isinstance(obj, list) and (len(obj) == 2 or len(obj) == 3):
+        return slice(*obj)
+    elif isinstance(obj, slice):
+        return obj
+    else:
+        raise TypeError("Input must be a slice or a list.")

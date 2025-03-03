@@ -19,12 +19,30 @@ import os.path as osp
 import tempfile
 
 import herbie
+import numpy as np
 import pandas as pd
 import xarray as xr
 
+from ...types import CoordRange
 from .._base import BaseDataset
 
 logger = logging.getLogger(__name__)
+
+
+def _subset_x_y(ds: xr.Dataset, xs: slice, ys: slice):
+    # Subset x,y according to xs, ys
+
+    if not isinstance(xs, slice):
+        first, second, last = np.asarray(xs)[[0, 1, -1]]
+        xs = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
+    if not isinstance(ys, slice):
+        first, second, last = np.asarray(ys)[[0, 1, -1]]
+        ys = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
+
+    ds = ds.sel(y=ys)
+    ds = ds.sel(x=xs)
+
+    return ds
 
 
 class HRRRBaseDataset(BaseDataset):
@@ -39,8 +57,6 @@ class HRRRBaseDataset(BaseDataset):
     _priority = ["google", "aws", "azure"]
 
     lat_direction = True
-    meta_prepare_func = None
-    tasks_func = None
 
     def _extra_setup(self, **kwargs):
         self._herbie_save_dir = tempfile.TemporaryDirectory()
@@ -69,4 +85,52 @@ class HRRRBaseDataset(BaseDataset):
         logger.debug("Fixing longitude range")
         ds["x"] = (ds["x"] % 360 + 540) % 360 - 180
 
+        ds = ds.assign_coords(lon=ds.coords["x"], lat=ds.coords["y"])
+
         return ds
+
+    @classmethod
+    def meta_prepare_func(cls, xs: slice, ys: slice, year: int, month: int, **kwargs):
+        with xr.open_mfdataset(cls._get_files(year, month), combine="by_coords") as ds:
+            ds = ds.coords.to_dataset()
+            ds = _subset_x_y(ds, xs, ys)
+            meta = ds.load()
+
+        return meta
+
+    @classmethod
+    def tasks_func(
+        cls,
+        xs: CoordRange,
+        ys: CoordRange,
+        yearmonths: xr.DataArray,
+        **kwargs,
+    ):
+        if not isinstance(xs, slice):
+            xs = slice(*xs.values[[0, -1]])
+        if not isinstance(ys, slice):
+            ys = slice(*ys.values[[0, -1]])
+
+        return [
+            dict(
+                prepare_func=cls.prepare_func,
+                xs=xs,
+                ys=ys,
+                year=year,
+                month=month,
+                fn=cls._get_files(year, month, **kwargs),
+            )
+            for year, month in yearmonths
+        ]
+
+    @staticmethod
+    def prepare_func(fn, year, month, xs, ys, **kwargs):
+        if isinstance(fn, str) and not osp.exists(fn):
+            return
+        if isinstance(fn, list) and not all(osp.isfile(f) for f in fn):
+            return
+
+        with xr.open_mfdataset(fn) as ds:
+            logger.info("Opening %s", fn)
+
+            yield (year, month), _subset_x_y(ds, xs, ys)

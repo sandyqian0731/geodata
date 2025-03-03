@@ -16,8 +16,50 @@
 import logging
 
 import cdsapi
+import numpy as np
+import xarray as xr
 
+from ...types import CoordRange
 from .._base import BaseDataset
+
+logger = logging.getLogger(__name__)
+
+
+def _convert_and_subset_lons_lats_era5(ds: xr.Dataset, xs: slice, ys: slice):
+    # Rename geographic dimensions to x,y
+    # Subset x,y according to xs, ys (subset_x_y_era5)
+
+    # Longitudes should go from -180. to +180.
+    if len(ds.coords["x"].sel(x=slice(xs.start + 360.0, xs.stop + 360.0))):
+        ds = xr.concat(
+            [ds.sel(x=slice(xs.start + 360.0, xs.stop + 360.0)), ds.sel(x=xs)], dim="x"
+        )
+        ds = ds.assign_coords(
+            x=np.where(
+                ds.coords["x"].values <= 180,
+                ds.coords["x"].values,
+                ds.coords["x"].values - 360.0,
+            )
+        )
+
+    # Subset x and y
+    return _subset_x_y_era5(ds, xs, ys)
+
+
+def _subset_x_y_era5(ds: xr.Dataset, xs: slice, ys: slice):
+    # Subset x,y according to xs, ys
+
+    if not isinstance(xs, slice):
+        first, second, last = np.asarray(xs)[[0, 1, -1]]
+        xs = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
+    if not isinstance(ys, slice):
+        first, second, last = np.asarray(ys)[[0, 1, -1]]
+        ys = slice(first - 0.1 * (second - first), last + 0.1 * (second - first))
+
+    ds = ds.sel(y=ys)
+    ds = ds.sel(x=xs)
+
+    return ds
 
 
 class ERA5BaseDataset(BaseDataset):
@@ -38,3 +80,47 @@ class ERA5BaseDataset(BaseDataset):
             debug_callback=self.logger.debug,
             warning_callback=self.logger.warning,
         )
+
+    @classmethod
+    def meta_prepare_func(cls, xs: slice, ys: slice, year: int, month: int, **kwargs):
+        # Reference of the quantities
+        # https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
+        # Geopotential is aka Orography in the CDS:
+        # https://confluence.ecmwf.int/pages/viewpage.action?pageId=78296105
+
+        with xr.open_mfdataset(cls._get_path(year, month), combine="by_coords") as ds:
+            ds = ds.coords.to_dataset()
+            ds = _convert_and_subset_lons_lats_era5(ds, xs, ys)
+            meta = ds.load()
+
+        return meta
+
+    @classmethod
+    def tasks_func(
+        cls,
+        xs: CoordRange,
+        ys: CoordRange,
+        yearmonths: xr.DataArray,
+        prepare_func: callable,
+        **meta_attrs,
+    ):
+        if not isinstance(xs, slice):
+            xs = slice(*xs.values[[0, -1]])
+        if not isinstance(ys, slice):
+            ys = slice(*ys.values[[0, -1]])
+        fn = meta_attrs["fn"]
+
+        logger.info(yearmonths)
+        logger.info(list(yearmonths))
+
+        return [
+            dict(
+                prepare_func=prepare_func,
+                xs=xs,
+                ys=ys,
+                year=year,
+                month=month,
+                fn=fn.format(year=year, month=month),
+            )
+            for year, month in yearmonths
+        ]
