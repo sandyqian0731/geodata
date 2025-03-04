@@ -154,7 +154,7 @@ def cutout_prepare(
             pool.map(cutout_do_task, tasks)
         except Exception as e:
             pool.terminate()
-            logger.info(
+            logger.warning(
                 "Preparation of cutout '%s' has been interrupted by an exception. "
                 "Purging the incomplete cutout_dir.",
                 cutout.name,
