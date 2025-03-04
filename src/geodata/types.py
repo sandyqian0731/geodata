@@ -13,8 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+"""This module defines some of the common types used in the geodata package."""
+
+from pathlib import Path
+
+# Geodata Specific Types
 DateRange = slice | tuple[int, int] | list[int]
 CoordRange = slice | tuple[float, float] | list[float]
 BoundRange = tuple[float, float, float, float] | list[float]
+
+# Filesystem
+PathLike = str | Path
 
 __all__ = ["DateRange", "CoordRange", "BoundRange"]

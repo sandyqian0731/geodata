@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+from .wind_3d import ERA5Wind3DHourlyDataset
 from .wind_solar import ERA5WindSolarHourlyDataset
 
-__all__ = ["ERA5WindSolarHourlyDataset"]
+__all__ = ["ERA5WindSolarHourlyDataset", "ERA5Wind3DHourlyDataset"]

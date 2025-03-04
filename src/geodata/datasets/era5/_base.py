@@ -14,15 +14,24 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import logging
+import os
 
-import cdsapi
 import numpy as np
 import xarray as xr
 
-from ...types import CoordRange
+from ...types import CoordRange, PathLike
 from .._base import BaseDataset
 
 logger = logging.getLogger(__name__)
+
+try:
+    import cdsapi
+except ImportError:
+    logger.warning(
+        "cdsapi is not installed. You will not be able to download ERA5 data."
+        "Please install it with `pip install 'geodata-re[download]'."
+    )
+    cdsapi = None
 
 
 def _convert_and_subset_lons_lats_era5(ds: xr.Dataset, xs: slice, ys: slice):
@@ -124,3 +133,31 @@ class ERA5BaseDataset(BaseDataset):
             )
             for year, month in yearmonths
         ]
+
+    @classmethod
+    def prepare_func(
+        cls,
+        fn: PathLike,
+        year: int,
+        month: int,
+        xs: slice,
+        ys: slice,
+        **kwargs,
+    ):
+        """Prepare the dataset for a given year and month."""
+        if isinstance(fn, str) and not os.path.exists(fn):
+            return
+        if isinstance(fn, list) and not all(os.path.isfile(f) for f in fn):
+            return
+
+        with xr.open_dataset(fn) as ds:
+            logger.info("Opening %s", fn)
+            ds = _subset_x_y_era5(ds, xs, ys)
+
+            # New ERA5 format for hourly datasets
+            # See https://forum.ecmwf.int/t/new-time-format-in-era5-netcdf-files/3796
+            # TODO: We can remove this if we refactor geodata's convert module in the future
+            if "valid_time" in ds.coords:
+                ds = ds.rename({"valid_time": "time"})
+
+            yield (year, month), ds
