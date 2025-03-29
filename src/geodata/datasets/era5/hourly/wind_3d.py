@@ -16,7 +16,6 @@
 import logging
 import pprint
 import tempfile
-from calendar import monthrange
 from pathlib import Path
 
 import xarray as xr
@@ -34,6 +33,7 @@ class ERA5Wind3DHourlyDataset(ERA5BaseDataset):
     """
 
     weather_config = "wind_3d_hourly"
+    frequency = "daily"
     L137_LEVELS = range(131, 138)
 
     # Information that are needed for ERA5's API request
@@ -58,16 +58,11 @@ class ERA5Wind3DHourlyDataset(ERA5BaseDataset):
 
         year: int = file.year
         month: int = file.month
+        day: int = file.day
         save_path: Path = file.path
 
-        if self.testing:
-            date = f"{year}{month:02d}01/to/{year}{month:02d}03"
-        else:
-            date = (
-                f"{year}{month:02d}01/to/{year}{month:02d}{monthrange(year, month)[1]}"
-            )
         full_request = {
-            "date": date,
+            "date": f"{year}{month:02d}{day:02d}",
             "levelist": "/".join([str(level) for level in self.L137_LEVELS]),
             "levtype": "ml",
             "param": "/".join(self.variables.values()),

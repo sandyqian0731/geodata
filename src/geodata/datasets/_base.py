@@ -260,7 +260,9 @@ class BaseDataset(abc.ABC):
 
     def download(self, force: bool = False):
         """Method to download the dataset. This method should download the
-        dataset files and store them in the appropriate location.
+        dataset files and store them in the appropriate location. If the dataset
+        is specified as a ``testing'' dataset, only the first three (3) days
+        of the dataset will be downloaded.
 
         Args:
             force: A boolean flag indicating whether to force the download of
