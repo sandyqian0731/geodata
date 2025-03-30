@@ -35,9 +35,6 @@ except ImportError:
 
 
 def _convert_and_subset_lons_lats_era5(ds: xr.Dataset, xs: slice, ys: slice):
-    # Rename geographic dimensions to x,y
-    # Subset x,y according to xs, ys (subset_x_y_era5)
-
     # Longitudes should go from -180. to +180.
     if len(ds.coords["x"].sel(x=slice(xs.start + 360.0, xs.stop + 360.0))):
         ds = xr.concat(
@@ -161,3 +158,6 @@ class ERA5BaseDataset(BaseDataset):
                 ds = ds.rename({"valid_time": "time"})
 
             yield (year, month), ds
+
+    def _dataset_postprocess(self, ds, **kwargs):
+        return super()._dataset_postprocess(ds, **kwargs)

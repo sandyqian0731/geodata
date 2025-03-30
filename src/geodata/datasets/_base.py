@@ -274,6 +274,11 @@ class BaseDataset(abc.ABC):
             return
 
         for file in tqdm(self.catalog, unit="file", dynamic_ncols=True):
+            # Skip the file if it has already been downloaded (unless force is True)
+            if file.check() and not force:
+                logger.debug(f"{file.path} already exists, skipping download")
+                continue
+
             # We first must ensure the directory exists
             file.path.parent.mkdir(parents=True, exist_ok=True)
 
