@@ -429,8 +429,6 @@ class BaseDataset(abc.ABC):
                 cat = self._monthly_catalog()
             case "daily":
                 cat = self._daily_catalog()
-            case "hourly":
-                cat = self._hourly_catalog()
             case _:
                 raise ValueError(
                     f"Invalid frequency {self.frequency} defined for this dataset."
@@ -438,7 +436,7 @@ class BaseDataset(abc.ABC):
 
         return cat
 
-    def _monthly_catalog(self):
+    def _monthly_catalog(self) -> list["AtomicDataset"]:
         catalog = []
 
         for year, month in itertools.product(

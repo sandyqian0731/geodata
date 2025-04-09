@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from . import daily, hourly, monthly
+from .slv_radiation import MERRA2SLVRadiationMonthlyDataset
+from .surface_flux import MERRA2SurfaceFluxMonthlyDataset
 
-__all__ = ["hourly", "daily", "monthly"]
+__all__ = ["MERRA2SLVRadiationMonthlyDataset", "MERRA2SurfaceFluxMonthlyDataset"]

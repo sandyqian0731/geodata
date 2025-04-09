@@ -55,6 +55,7 @@ class ERA5WindSolarMonthlyDataset(ERA5WindSolarHourlyDataset):
     """
 
     weather_config = "wind_solar_monthly"
+    frequency = "monthly"
 
     def _download_file(self, file: AtomicDataset):
         year: int = file.year

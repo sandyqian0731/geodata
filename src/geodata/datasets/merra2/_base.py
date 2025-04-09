@@ -185,6 +185,18 @@ class MERRA2BaseDataset(BaseDataset):
 
         return catalog
 
+    def _monthly_catalog(self):
+        if not self.url_template:
+            raise NotImplementedError("url_template is not defined for this dataset")
+
+        catalog = super()._monthly_catalog()
+
+        for file in catalog:
+            file.spinup = self.spinup_year(file.year, file.month)
+            file.url = [t.format(**vars(file)) for t in self.url_template]
+
+        return catalog
+
     @classmethod
     def meta_prepare_func(
         cls, xs: CoordRange, ys: CoordRange, year: int, month: int, **params
