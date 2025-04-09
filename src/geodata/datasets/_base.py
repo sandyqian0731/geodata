@@ -20,7 +20,7 @@ import itertools
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Type
 
 import pandas as pd
 import xarray as xr
@@ -30,6 +30,8 @@ from ..config import DATASET_ROOT_PATH
 from ..types import BoundRange, CoordRange, DateRange
 
 logger = logging.getLogger(__name__)
+
+_registry: dict[str, Type["BaseDataset"]] = {}
 
 
 @dataclasses.dataclass
@@ -518,3 +520,20 @@ class BaseDataset(abc.ABC):
                 raise ValueError(
                     f"Invalid frequency {cls.frequency} defined for this dataset."
                 )
+
+    def __init_subclass__(cls: Type["BaseDataset"], **kwargs):
+        """Register the subclass in the registry. This allows us to
+        dynamically load the dataset from the module.
+
+        Args:
+            cls: The class of the dataset.
+        """
+
+        super().__init_subclass__(**kwargs)
+        if not hasattr(cls, "weather_config"):
+            # Skip the class if it does not have a weather_config attribute
+            # This could be the case with intermediate base classes
+            return
+
+        _registry[cls.weather_config] = cls
+        logger.debug(f"Registered {cls.weather_config} in the registry")
