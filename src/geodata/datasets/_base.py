@@ -44,7 +44,7 @@ class AtomicDataset:
     month: int
     day: int | None = None
     file_hash: str | None = None
-    url: str | None = None
+    url: str | tuple[str] | None = None
     spinup: bool | None = None
 
     def __post_init__(self):
@@ -284,13 +284,9 @@ class BaseDataset(abc.ABC):
 
             self._download_file(file)
 
-        logger.info(f"Downloaded {self}")
-        logger.info("Cleaning and renaming coordinates")
-
-        # Post-process the dataset
-        for file in tqdm(self.catalog, unit="file", dynamic_ncols=True):
             if file.check():
-                ds = xr.open_dataset(file.path).chunk()
+                logger.debug("Postprocessing %s", file.path)
+                ds = xr.open_dataset(file.path).chunk("auto")
                 ds = self._rename_and_clean_coords(ds)
                 ds = self._dataset_postprocess(ds)
 
@@ -301,6 +297,9 @@ class BaseDataset(abc.ABC):
 
                 file.path.unlink()
                 file.path.with_stem(file.path.stem + "_postprocessed").rename(file.path)
+
+        logger.info(f"Downloaded {self}")
+        logger.info("Cleaning and renaming coordinates")
 
     def _dataset_postprocess(self, ds: xr.Dataset | xr.DataArray, **kwargs):
         """Method to postprocess the dataset after it has been downloaded.

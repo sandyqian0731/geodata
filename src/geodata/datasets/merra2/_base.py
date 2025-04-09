@@ -14,13 +14,17 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import logging
+import os
+import tempfile
 from calendar import monthrange
+from typing import Sequence
 
 import numpy as np
 import requests
 import xarray as xr
+from tqdm.auto import tqdm
 
-from ...types import CoordRange
+from ...types import CoordRange, PathLike
 from .._base import AtomicDataset, BaseDataset
 
 logger = logging.getLogger(__name__)
@@ -60,28 +64,87 @@ class MERRA2BaseDataset(BaseDataset):
     """MERRA2BaseDataset is a class that encaps a dataset from the MERRA2 reanalysis
     dataset. It provides a streamlined workflow for downloading, preprocessing,
     and storing of these datasets.
-
-    TODO: Support multi-file downloads.
     """
 
+    url_template: Sequence[str]
+    variables: Sequence[str]
     module = "merra2"
     projection = "latlong"
     lat_direction = True
     frequency = "daily"
-    url_template = ""
 
     def _download_file(self, file: AtomicDataset):
-        assert "url" in file, "URL is required to download the file"
+        assert hasattr(file, "url"), "URL is required to download the file"
 
-        url: str = file.url
+        url: tuple[str] = file.url
 
         # Download the file
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
+        match len(file.url):
+            case 1:
+                logger.debug("Downloading %s", url[0])
+                with requests.get(url[0], stream=True) as r:
+                    r.raise_for_status()
 
-            with open(file.path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+                    with (
+                        open(file.path, "wb") as f,
+                        tqdm(
+                            total=int(r.headers.get("content-length", 0)),
+                            unit="B",
+                            unit_scale=True,
+                        ) as pbar,
+                    ):
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+            case _:
+                with tempfile.TemporaryDirectory() as tempdir:
+                    for i, url in enumerate(file.url):
+                        logger.debug("Downloading %s", url)
+                        with requests.get(url, stream=True) as r:
+                            r.raise_for_status()
+
+                            with (
+                                open(os.path.join(tempdir, str(i)), "wb") as f,
+                                tqdm(
+                                    total=int(r.headers.get("content-length", 0)),
+                                    unit="B",
+                                    unit_scale=True,
+                                ) as pbar,
+                            ):
+                                for chunk in r.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                                    pbar.update(len(chunk))
+
+                    with xr.open_mfdataset(
+                        [os.path.join(tempdir, str(i)) for i in range(len(file.url))],
+                        combine="by_coords",
+                        chunks="auto",
+                    ) as ds:
+                        ds.to_netcdf(file.path)
+                        logger.info("Preprocessing complete with multiple files")
+
+    def _dataset_postprocess(self, ds: xr.Dataset, **kwargs):
+        """Postprocess the dataset after downloading and opening it.
+
+        Args:
+            ds (xr.Dataset): The dataset to postprocess.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            xr.Dataset: The postprocessed dataset.
+        """
+
+        # Rename the coordinates
+        ds = ds.rename({"x": "lon", "y": "lat"})
+        ds = ds.assign_coords(lon=ds.coords["lon"], lat=ds.coords["lat"])
+
+        # Only keep the variables that are needed
+        for var in ds.data_vars:
+            if var.lower() not in self.variables:
+                ds = ds.drop(var)
+
+        # Change all variables to lowercase
+        return ds.rename({var: var.lower() for var in ds.data_vars})
 
     def spinup_year(self, year: int, month: int):
         """Returns the spinup period for the given year and month.
@@ -118,7 +181,7 @@ class MERRA2BaseDataset(BaseDataset):
 
         for file in catalog:
             file.spinup = self.spinup_year(file.year, file.month)
-            file.url = self.url_template.format(**vars(file))
+            file.url = [t.format(**vars(file)) for t in self.url_template]
 
         return catalog
 
@@ -190,3 +253,28 @@ class MERRA2BaseDataset(BaseDataset):
                 ]
             case _:
                 raise NotImplementedError("Frequency not supported")
+
+    @classmethod
+    def prepare_func(
+        cls,
+        fn: PathLike,
+        year: int,
+        month: int,
+        xs: slice,
+        ys: slice,
+        **kwargs,
+    ):
+        """Prepare the dataset for a given year and month."""
+
+        if isinstance(fn, str) and not os.path.exists(fn):
+            return
+        if isinstance(fn, list) and not all(os.path.isfile(f) for f in fn):
+            return
+
+        with xr.open_dataset(fn) as ds:
+            logger.info("Opening %s", fn)
+            ds = _convert_and_subset_lons_lats_merra2(ds, xs, ys)
+            ds = ds.rename({"x": "lon", "y": "lat"})
+            ds = ds.assign_coords(lon=ds.coords["lon"], lat=ds.coords["lat"])
+
+            yield (year, month), ds

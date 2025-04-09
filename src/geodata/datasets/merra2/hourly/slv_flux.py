@@ -17,13 +17,13 @@
 from .._base import MERRA2BaseDataset
 
 
-class MERRA2SurfaceFluxHourlyDataset(MERRA2BaseDataset):
-    """MERRA2SurfaceFluxHourlyDataset is a class that encaps a dataset from the MERRA2 reanalysis
+class MERRA2SLVFluxHourlyDataset(MERRA2BaseDataset):
+    """MERRA2SLVFluxHourlyDataset is a class that encaps a dataset from the MERRA2 reanalysis
     dataset. It provides a streamlined workflow for downloading, preprocessing,
     and storing of these datasets.
     """
 
-    weather_config = "surface_flux_hourly"
+    weather_config = "slv_flux_hourly"
 
     variables = [
         "ustar",
@@ -38,7 +38,15 @@ class MERRA2SurfaceFluxHourlyDataset(MERRA2BaseDataset):
         "pblh",
         "hflux",
         "eflux",
+        "u2m",
+        "v2m",
+        "u10m",
+        "v10m",
+        "u50m",
+        "v50m",
     ]
+
     url_template = (
         "https://goldsmr4.gesdisc.eosdis.nasa.gov/data/MERRA2/M2T1NXFLX.5.12.4/{year}/{month:0>2}/MERRA2_{spinup}.tavg1_2d_flx_Nx.{year}{month:0>2}{day:0>2}.nc4",
+        "https://goldsmr4.gesdisc.eosdis.nasa.gov/data/MERRA2/M2T1NXSLV.5.12.4/{year}/{month:0>2}/MERRA2_{spinup}.tavg1_2d_slv_Nx.{year}{month:0>2}{day:0>2}.nc4",
     )
