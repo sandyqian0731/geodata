@@ -45,7 +45,7 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
         - x: longitude
     """
 
-    weather_config = "wind_3d"
+    weather_config = "hrrr_wind_3d_hourly"
     product = "nat"  # Use "nat" product for 3D data
 
     def _download_file(self, file: AtomicDataset):

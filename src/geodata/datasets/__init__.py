@@ -17,4 +17,9 @@
 from . import era5, merra2
 from ._base import _registry as registry
 
-__all__ = ["era5", "merra2", "registry"]
+__all__ = ["era5", "merra2", "registry", "register_hrrr"]
+
+
+def register_hrrr():
+    """Register the HRRR dataset with the registry."""
+    from . import hrrr  # noqa: F401

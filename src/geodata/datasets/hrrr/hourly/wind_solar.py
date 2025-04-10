@@ -42,7 +42,7 @@ class HRRRHourlyDataset(HRRRBaseDataset):
     as well as the variables they wish to download.
     """
 
-    weather_config = "wind_solar"
+    weather_config = "hrrr_wind_solar_hourly"
     product = "sfc"
 
     def _download_file(self, file: AtomicDataset):
