@@ -84,7 +84,17 @@ class ERA5WindSolarMonthlyDataset(ERA5WindSolarHourlyDataset):
             )
 
             with tempfile.TemporaryDirectory() as tempdir:
-                full_result.download(os.path.join(tempdir, "download.zip"))
+                _count = 0
+                for _ in range(3):
+                    try:
+                        _count += 1
+                        full_result.download(os.path.join(tempdir, "download.zip"))
+                        break
+                    except Exception as e:
+                        logger.error("Error downloading file: %s", e)
+                        if _count == 3:
+                            raise
+
                 with zipfile.ZipFile(
                     os.path.join(tempdir, "download.zip"), "r"
                 ) as zip_ref:

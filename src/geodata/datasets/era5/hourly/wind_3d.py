@@ -78,14 +78,32 @@ class ERA5Wind3DHourlyDataset(ERA5BaseDataset):
         full_result = self.client.retrieve(self.product, full_request)
 
         if not self.bounds:
-            full_result.download(save_path)
-            logger.info("File downloaded: %s", save_path)
-            return
+            _count = 0
+            for _ in range(3):
+                try:
+                    _count += 1
+                    full_result.download(save_path)
+                    logger.info("File downloaded: %s", save_path)
+                    return
+                except Exception as e:
+                    logger.error("Download failed: %s", e)
+                    if _count == 3:
+                        raise
 
         # NOTE: Raw MARS request doesn't support bounding box, so we need to
         # subset the data after downloading
         with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-            full_result.download(tmpfile.name)
+            _count = 0
+            for _ in range(3):
+                try:
+                    _count += 1
+                    full_result.download(tmpfile.name)
+                    logger.info("File downloaded: %s", save_path)
+                    break
+                except Exception as e:
+                    logger.error("Download failed: %s", e)
+                    if _count == 3:
+                        raise
             with xr.open_dataset(tmpfile.name, chunks="auto") as ds:
                 ds = ds.sel(
                     longitude=slice(*sorted([self.bounds[0], self.bounds[2]])),
