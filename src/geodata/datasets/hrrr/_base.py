@@ -78,7 +78,10 @@ class HRRRBaseDataset(BaseDataset):
         # to include all hours in the range
 
         logger.debug("Reindexing dataset to include all hours in the range")
-        ds = ds.resample(time="1h").mean()
+        dt: np.datetime64 = (
+            ds["time"].values[0].astype("datetime64[D]").astype("datetime64[m]")
+        )
+        ds = ds.reindex(time=pd.date_range(dt, periods=24, freq="h")).ffill(dim="time")
 
         # NOTE: For some reasons, HRRR's longitude is in the range of [0, 360]
         # instead of [-180, 180]. We need to put it back to [-180, 180].
@@ -86,6 +89,7 @@ class HRRRBaseDataset(BaseDataset):
         ds["x"] = (ds["x"] % 360 + 540) % 360 - 180
 
         ds = ds.assign_coords(lon=ds.coords["x"], lat=ds.coords["y"])
+        del ds["valid_time"]
 
         return ds
 
