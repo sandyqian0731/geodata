@@ -19,15 +19,12 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import xarray as xr
 
-import geodata
-
 from ..config import model_dir
-from ..cutout import Cutout
-from ..dataset import Dataset
+from ..datasets._base import BaseDataset
 from ..logging import logger
 from ..utils import NpEncoder
 
@@ -37,7 +34,7 @@ class BaseModel(abc.ABC):
 
     Args:
         name (str): The name of the model.
-        source (Union[geodata.Dataset, geodata.Cutout, xr.Dataset]): The source of the model. Can be a Dataset, Cutout or xarray.Dataset.
+        source (BaseDataset): The source of the model.
         interpolate (bool, optional): Interpolate the source to the same grid as the target. Defaults to False.
         **kwargs: Additional keyword arguments to pass to the model.
     """
@@ -54,56 +51,37 @@ class BaseModel(abc.ABC):
         "weather_data_config",
     }
 
-    def __init__(self, source: Union[geodata.Dataset, geodata.Cutout], **kwargs):
-        if source.config not in self.SUPPORTED_WEATHER_DATA_CONFIGS:
+    def __init__(self, source: BaseDataset, **kwargs):
+        if not isinstance(source, BaseDataset):
+            raise ValueError(f"Source must be a Dataset, but got {type(source)}.")
+        if source.weather_config not in self.SUPPORTED_WEATHER_DATA_CONFIGS:
             raise ValueError(
-                f"Weather data config {source.config} is not supported by this model."
+                f"Weather data config {source.weather_config} is not supported by this model."
             )
 
-        if not source.prepared:
-            raise ValueError(
-                "The source Dataset/Cutout for this model is not prepared."
-            )
+        if not source.downloaded:
+            raise ValueError("The source Dataset for this model is not prepared.")
 
         self.source = source
         self._extra_kwargs = kwargs
         self._corrupt_metadata = False
         self._prepared = False
 
-        if isinstance(source, geodata.Dataset):
-            self._ref_path = model_dir.parent / self.source.module
-            self._path = (
-                model_dir
-                / self.type
-                / self.__class__.__name__
-                / "datasets"
-                / self.source.module
-            )
-        else:
-            self._ref_path = model_dir.parent / "cutouts"
-            self._path = (
-                model_dir
-                / self.type
-                / self.__class__.__name__
-                / "cutouts"
-                / self.source.name
-            )
+        self._ref_path = model_dir.parent / self.source.module
+        self._path = (
+            model_dir / self.type / self.__class__.__name__ / self.source.module
+        )
 
         if (meta_path := self._path / "meta.json").exists():
             try:
                 with open(meta_path, encoding="utf_8") as f:
                     self.metadata = json.load(f)
 
-                # NOTE: Double-check if we have an updated dataset/cutout
+                # NOTE: Double-check if we have an updated dataset
                 # If we do, we need to re-prepare the model
-                if isinstance(source, geodata.Dataset):
-                    _source_files = self.extract_dataset_metadata(source).get(
-                        "files_orig", {}
-                    )
-                else:
-                    _source_files = self.extract_cutout_metadata(source).get(
-                        "files_orig", {}
-                    )
+                _source_files = self.extract_dataset_metadata(source).get(
+                    "files_orig", {}
+                )
 
                 if set(_source_files.keys()) != set(
                     self.metadata.get("files_orig", {}).keys()
@@ -113,10 +91,7 @@ class BaseModel(abc.ABC):
                         meta_path,
                     )
                     self._corrupt_metadata = True
-                    if isinstance(source, geodata.Dataset):
-                        self.metadata = self.extract_dataset_metadata(source)
-                    else:
-                        self.metadata = self.extract_cutout_metadata(source)
+                    self.metadata = self.extract_dataset_metadata(source)
 
             except json.JSONDecodeError:
                 logger.warning(
@@ -124,16 +99,11 @@ class BaseModel(abc.ABC):
                     meta_path,
                 )
                 self._corrupt_metadata = True
-                if isinstance(source, geodata.Dataset):
-                    self.metadata = self.extract_dataset_metadata(source)
-                else:
-                    self.metadata = self.extract_cutout_metadata(source)
+                self.metadata = self.extract_dataset_metadata(source)
+
         else:
             # NOTE: We only store metadata in transient fashion until preparation is done
-            if isinstance(source, geodata.Dataset):
-                self.metadata = self.extract_dataset_metadata(source)
-            else:
-                self.metadata = self.extract_cutout_metadata(source)
+            self.metadata = self.extract_dataset_metadata(source)
 
     def __repr__(self):
         return f"Model(source={self.source}, type={self.type})"
@@ -176,17 +146,7 @@ class BaseModel(abc.ABC):
             xr.DataArray: Dataset with wind speed.
         """
 
-        if self.from_dataset:
-            return self._estimate_dataset(
-                height=height,
-                years=years,
-                months=months,
-                xs=xs,
-                ys=ys,
-                use_real_data=use_real_data,
-            )
-
-        return self._estimate_cutout(
+        return self._estimate_dataset(
             height=height,
             years=years,
             months=months,
@@ -195,8 +155,8 @@ class BaseModel(abc.ABC):
             use_real_data=use_real_data,
         )
 
-    def extract_dataset_metadata(self, dataset: Dataset) -> dict:
-        if not dataset.prepared:
+    def extract_dataset_metadata(self, dataset: BaseDataset) -> dict:
+        if not dataset.downloaded:
             raise ValueError("The source dataset for this model is not prepared.")
 
         logger.info("Using dataset %s", dataset.module)
@@ -211,43 +171,16 @@ class BaseModel(abc.ABC):
         if isinstance(dataset.months, slice):
             metadata["months"] = dataset.months.start, dataset.months.stop
 
-        metadata["weather_data_config"] = dataset.config
+        metadata["weather_data_config"] = dataset.weather_config
 
         # NOTE: file paths for estimation parameters will be added later in the prepare step
         metadata["files_prepared"] = {}
         metadata["files_orig"] = {}
-        for c, fp in dataset.downloadedFiles:
-            if c == metadata["weather_data_config"]:
-                with open(fp, "rb") as f:
-                    metadata["files_orig"][
-                        str(Path(fp).relative_to(self._ref_path))
-                    ] = hashlib.sha256(f.read()).hexdigest()
-
-        return metadata
-
-    def extract_cutout_metadata(self, cutout: Cutout) -> dict:
-        logger.info("Using cutout %s", cutout.name)
-
-        metadata = {}
-
-        metadata["name"] = cutout.name
-        metadata["module"] = cutout.meta.attrs["module"]
-        metadata["from_dataset"] = False
-        metadata["weather_data_config"] = cutout.config
-
-        if isinstance(cutout.years, slice):
-            metadata["years"] = cutout.years.start, cutout.years.stop
-        if isinstance(cutout.months, slice):
-            metadata["months"] = cutout.months.start, cutout.months.stop
-
-        metadata["files_prepared"] = {}
-        metadata["files_orig"] = {}
-        for yearmonth in cutout.coords["year-month"].to_index():
-            fp = cutout.datasetfn(yearmonth)
-            with open(fp, "rb") as f:
-                metadata["files_orig"][str(Path(fp).relative_to(self._ref_path))] = (
-                    hashlib.sha256(f.read()).hexdigest()
-                )
+        for d in dataset.catalog:
+            with open(d.path, "rb") as f:
+                metadata["files_orig"][
+                    str(Path(d.path).relative_to(self._ref_path))
+                ] = hashlib.sha256(f.read()).hexdigest()
 
         return metadata
 
@@ -329,9 +262,7 @@ class BaseModel(abc.ABC):
         (self._path / "nc4").mkdir(exist_ok=True, parents=True)
 
         self.metadata["files_prepared"] = {}
-        for fp in (
-            self._prepare_dataset() if self.from_dataset else self._prepare_cutout()
-        ):
+        for fp in self._prepare_dataset():
             with open(self._path / fp, "rb") as f:
                 self.metadata["files_prepared"][fp] = hashlib.sha256(
                     f.read()
@@ -351,21 +282,6 @@ class BaseModel(abc.ABC):
         """
 
     @abc.abstractmethod
-    def _prepare_cutout(self) -> list:
-        """Prepare the model from a cutout.
-
-        Returns:
-            list: List of files.
-        """
-
-    @property
-    def from_dataset(self) -> bool:
-        """Check if the model is from a dataset."""
-        if "from_dataset" not in self.metadata:
-            return False
-        return self.metadata["from_dataset"]
-
-    @abc.abstractmethod
     def _estimate_dataset(
         self,
         height: int,
@@ -376,30 +292,6 @@ class BaseModel(abc.ABC):
         use_real_data: Optional[bool] = False,
     ) -> xr.DataArray:
         """Estimate the wind speed from a dataset.
-
-        Args:
-            height (int): Height of the wind speed, need to be greater than 0.
-            years (slice): Years.
-            months (slice, optional): Months. If None, all months are estimated.
-            xs (slice): X coordinates. If None, all x coordinates in source are estimated.
-            ys (slice): Y coordinates. If None, all y coordinates in source are estimated.
-            use_real_data (bool, optional): If available, use real data for estimation. Defaults to False.
-
-        Returns:
-            xr.DataArray: Dataset with wind speed.
-        """
-
-    @abc.abstractmethod
-    def _estimate_cutout(
-        self,
-        height: int,
-        years: slice,
-        months: Optional[slice] = None,
-        xs: Optional[slice] = None,
-        ys: Optional[slice] = None,
-        use_real_data: Optional[bool] = False,
-    ) -> xr.DataArray:
-        """Estimate the wind speed from a cutout.
 
         Args:
             height (int): Height of the wind speed, need to be greater than 0.
