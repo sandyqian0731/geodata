@@ -84,7 +84,7 @@ def _splrep(a: xr.DataArray, dim: Hashable, k: int = 3) -> xr.Dataset:
         from dask.array import map_blocks
         from dask.diagnostics import ProgressBar
 
-        logger.info("Computing interpolation coefficients using Dask.")
+        logger.debug("Computing interpolation coefficients using Dask.")
 
         if len(a.data.chunks[0]) > 1:
             a = a.chunk({dim: -1})

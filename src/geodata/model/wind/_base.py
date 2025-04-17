@@ -69,17 +69,17 @@ class WindBaseModel(BaseModel):
         logger.info("Preparing the model from dataset.")
 
         prepared_files = []
+
         for file_path in tqdm(self.files_unprepared, dynamic_ncols=True):
             orig_ds_path: Path = self._ref_path / file_path
             ds = xr.open_dataset(orig_ds_path, chunks="auto")
             try:
                 ds = self._prepare_fn(ds)
-            except SystemError:
-                logger.warning(
-                    "Could not compute wind speed of %s, possibly due to corrupt file.",
-                    orig_ds_path.name,
+            except Exception as e:
+                logger.error(
+                    "Error preparing dataset %s: %s", orig_ds_path.name, str(e)
                 )
-                continue
+                return prepared_files
 
             ds_path: Path = (
                 self._path / "nc4" / Path(file_path).with_suffix(".params.nc4")

@@ -18,6 +18,7 @@ import abc
 import hashlib
 import json
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -25,7 +26,7 @@ import xarray as xr
 from tqdm.auto import tqdm
 
 from ..config import model_dir
-from ..datasets._base import BaseDataset
+from ..datasets._base import AtomicDataset, BaseDataset
 from ..logging import logger
 from ..utils import NpEncoder
 
@@ -179,16 +180,25 @@ class BaseModel(abc.ABC):
         # NOTE: file paths for estimation parameters will be added later in the prepare step
         metadata["files_prepared"] = {} if prepared is None else prepared
         metadata["files_orig"] = {}
-        for d in tqdm(
-            dataset.catalog,
-            unit="file",
-            dynamic_ncols=True,
-            desc="Original Files Integrity Check",
-        ):
+
+        def compute_hash(d: AtomicDataset):
             with open(d.path, "rb") as f:
-                metadata["files_orig"][
-                    str(Path(d.path).relative_to(self._ref_path))
-                ] = hashlib.sha256(f.read()).hexdigest()
+                return str(Path(d.path).relative_to(self._ref_path)), hashlib.sha256(
+                    f.read()
+                ).hexdigest()
+
+        with ThreadPoolExecutor() as executor:
+            results = list(
+                tqdm(
+                    executor.map(compute_hash, dataset.catalog),
+                    total=len(dataset.catalog),
+                    unit="file",
+                    dynamic_ncols=True,
+                    desc="Original Files Integrity Check",
+                )
+            )
+
+        metadata["files_orig"] = dict(results)
 
         return metadata
 
@@ -277,6 +287,15 @@ class BaseModel(abc.ABC):
 
         with open(self._path / "meta.json", "w", encoding="utf-8") as f:
             json.dump(self.metadata, f, indent=4, cls=NpEncoder)
+
+        if len(set(self.metadata["files_orig"])) != len(
+            set(self.metadata["files_prepared"])
+        ):
+            logger.warning(
+                "The number of original files and prepared files do not match. "
+                "This may indicate an issue with the preparation process. Partially prepared files were saved."
+            )
+            return
 
         logger.info("Finished preparing model.")
 
