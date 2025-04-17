@@ -43,7 +43,6 @@ class BaseModel(abc.ABC):
     metadata_keys: set[str] = {
         "name",
         "module",
-        "from_dataset",
         "years",
         "months",
         "files_orig",
@@ -83,15 +82,17 @@ class BaseModel(abc.ABC):
                     "files_orig", {}
                 )
 
-                if set(_source_files.keys()) != set(
+                if set(_source_files.keys()) - set(
                     self.metadata.get("files_orig", {}).keys()
                 ):
                     logger.warning(
-                        "Metadata file %s is outdated. Model will be re-prepared.",
+                        "New dataset files have been downloaded since last model "
+                        "preparation. Model will need to be re-prepared!",
                         meta_path,
                     )
-                    self._corrupt_metadata = True
-                    self.metadata = self.extract_dataset_metadata(source)
+                    self.metadata = self.extract_dataset_metadata(
+                        source, self.metadata.get("files_prepared", {})
+                    )
 
             except json.JSONDecodeError:
                 logger.warning(
@@ -155,7 +156,9 @@ class BaseModel(abc.ABC):
             use_real_data=use_real_data,
         )
 
-    def extract_dataset_metadata(self, dataset: BaseDataset) -> dict:
+    def extract_dataset_metadata(
+        self, dataset: BaseDataset, prepared: dict[str, str] | None = None
+    ) -> dict:
         if not dataset.downloaded:
             raise ValueError("The source dataset for this model is not prepared.")
 
@@ -164,7 +167,6 @@ class BaseModel(abc.ABC):
         metadata = {}
 
         metadata["name"] = metadata["module"] = dataset.module
-        metadata["from_dataset"] = True
 
         if isinstance(dataset.years, slice):
             metadata["years"] = dataset.years.start, dataset.years.stop
@@ -174,7 +176,7 @@ class BaseModel(abc.ABC):
         metadata["weather_data_config"] = dataset.weather_config
 
         # NOTE: file paths for estimation parameters will be added later in the prepare step
-        metadata["files_prepared"] = {}
+        metadata["files_prepared"] = {} if prepared is None else prepared
         metadata["files_orig"] = {}
         for d in dataset.catalog:
             with open(d.path, "rb") as f:
@@ -204,6 +206,7 @@ class BaseModel(abc.ABC):
 
         if not nc4_path.exists() or not meta_path.exists() or self._corrupt_metadata:
             return False
+
         with open(meta_path, encoding="utf-8") as f:
             metadata_loaded = json.load(f)
             if set(metadata_loaded.keys()) != self.metadata_keys:
@@ -216,10 +219,7 @@ class BaseModel(abc.ABC):
         for fp in self.metadata["files_orig"]:
             fp_prepared = str(nc4_rel_path / Path(fp).with_suffix(".params.nc4"))
 
-            if (
-                fp not in self.metadata["files_orig"]
-                or fp_prepared not in self.metadata["files_prepared"]
-            ):
+            if fp_prepared not in self.metadata["files_prepared"]:
                 return False
 
             with open(self._ref_path / fp, "rb") as f:
@@ -239,9 +239,11 @@ class BaseModel(abc.ABC):
                     != hashlib.sha256(f.read()).hexdigest()
                 ):
                     logger.warning(
-                        "Parameter file %s in model has been modified since model creation. Model is not prepared!",
+                        "Parameter file %s in model has been modified since model creation."
+                        " This file will be re-prepared again.",
                         fp_prepared,
                     )
+                    del self.metadata["files_prepared"][fp_prepared]
                     return False
 
         return True
@@ -257,7 +259,6 @@ class BaseModel(abc.ABC):
             logger.info("The model is already prepared.")
             return
 
-        logger.info("Model not present in model directory, creating.")
         shutil.rmtree(self._path, ignore_errors=True)
         (self._path / "nc4").mkdir(exist_ok=True, parents=True)
 
@@ -272,6 +273,31 @@ class BaseModel(abc.ABC):
             json.dump(self.metadata, f, indent=4, cls=NpEncoder)
 
         logger.info("Finished preparing model.")
+
+    @property
+    def files_orig(self):
+        """Get the original files. of the model."""
+
+        files_orig = [self._ref_path / p for p in self.metadata["files_orig"]]
+        return files_orig
+
+    @property
+    def files_prepared(self):
+        """Get the prepared files of the model."""
+        self._check_prepared()  # Eliminate any corrupt files
+
+        files_prepared = [self._path / p for p in self.metadata["files_prepared"]]
+        return files_prepared
+
+    @property
+    def files_unprepared(self):
+        """Get the unprepared files of the model."""
+
+        original = set(self.metadata["files_orig"].keys())
+        prepared = set(self.metadata["files_prepared"].keys())
+
+        unprepared = original - prepared
+        return list(unprepared)
 
     @abc.abstractmethod
     def _prepare_dataset(self) -> list:
