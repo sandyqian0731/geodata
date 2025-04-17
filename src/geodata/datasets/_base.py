@@ -66,7 +66,7 @@ class AtomicDataset:
                 / f"{self.day:02d}.nc"
             )
 
-    def check(self, integrity: bool = True):
+    def check(self, integrity: bool = False):
         """Check the presence of the file and its integrity.
 
         Args:
@@ -207,6 +207,8 @@ class BaseDataset(abc.ABC):
             )
             self.storage_root.mkdir(parents=True)
 
+        self._downloaded = False
+
         self._extra_kwargs = kwargs
         self._extra_setup(**kwargs)
 
@@ -249,7 +251,23 @@ class BaseDataset(abc.ABC):
         a more comprehensive check is required.
         """
 
-        return all((file.check() for file in self.catalog))
+        if not self._downloaded:
+            self._downloaded = self._check_downloaded()
+        return self._downloaded
+
+    def _check_downloaded(self):
+        # Check if the dataset is downloaded
+        for file in tqdm(
+            self.catalog,
+            unit="file",
+            dynamic_ncols=True,
+            desc="Checking Downloaded Files",
+        ):
+            if not file.check():
+                logger.debug(f"{file.path} does not exist")
+                return False
+
+        return True
 
     @abc.abstractmethod
     def _download_file(self, file: AtomicDataset):

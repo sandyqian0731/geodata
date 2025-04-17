@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 import xarray as xr
+from tqdm.auto import tqdm
 
 from ..config import model_dir
 from ..datasets._base import BaseDataset
@@ -178,7 +179,12 @@ class BaseModel(abc.ABC):
         # NOTE: file paths for estimation parameters will be added later in the prepare step
         metadata["files_prepared"] = {} if prepared is None else prepared
         metadata["files_orig"] = {}
-        for d in dataset.catalog:
+        for d in tqdm(
+            dataset.catalog,
+            unit="file",
+            dynamic_ncols=True,
+            desc="Original Files Integrity Check",
+        ):
             with open(d.path, "rb") as f:
                 metadata["files_orig"][
                     str(Path(d.path).relative_to(self._ref_path))
