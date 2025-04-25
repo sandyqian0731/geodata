@@ -1,4 +1,4 @@
-# Copyright 2023 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
+# Copyright 2023, 2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -39,13 +39,6 @@ Example:
     >>> model.estimate(xs=slice(1, 2), ys=slice(1, 2), years=slice(2010, 2010), months=slice(1, 2))
 """
 
-from pathlib import Path
-from typing import Callable
-
-import xarray as xr
-from tqdm.auto import tqdm
-
-from ...logging import logger
 from .._base import BaseModel
 
 HEIGHTS = {"u50m": 50, "u10m": 10, "u2m": 2}
@@ -61,32 +54,3 @@ class WindBaseModel(BaseModel):
     """
 
     type: str = "wind"
-    _prepare_fn: Callable[[xr.Dataset], xr.Dataset]
-
-    def _prepare_dataset(self) -> list[tuple[str, Path]]:
-        """Prepare the model from a dataset."""
-
-        logger.info("Preparing the model from dataset.")
-
-        prepared_files = []
-
-        for file_path in tqdm(self.files_unprepared, dynamic_ncols=True):
-            orig_ds_path: Path = self._ref_path / file_path
-            ds = xr.open_dataset(orig_ds_path, chunks="auto")
-            try:
-                ds = self._prepare_fn(ds)
-            except Exception as e:
-                logger.error(
-                    "Error preparing dataset %s: %s", orig_ds_path.name, str(e)
-                )
-                return prepared_files
-
-            ds_path: Path = (
-                self._path / "nc4" / Path(file_path).with_suffix(".params.nc4")
-            )
-            ds_path.parent.mkdir(parents=True, exist_ok=True)
-            ds.to_netcdf(ds_path)
-
-            prepared_files.append(str(ds_path.relative_to(self._path)))
-
-        return prepared_files

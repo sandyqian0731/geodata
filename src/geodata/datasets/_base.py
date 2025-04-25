@@ -454,7 +454,45 @@ class BaseDataset(abc.ABC):
 
         return cat
 
-    def _monthly_catalog(self) -> list["AtomicDataset"]:
+    def get_monthly_catalog(self, year: int, month: int) -> list["AtomicDataset"]:
+        """Get the catalog for a specific month and year.
+
+        Args:
+            year: The year of the file.
+            month: The month of the file.
+        """
+        if not isinstance(year, int):
+            raise ValueError("year must be an integer")
+        if not isinstance(month, int):
+            raise ValueError("month must be an integer")
+        if not 1 <= month <= 12:
+            raise ValueError("month must be between 1 and 12")
+
+        if not self.years.start <= year <= self.years.stop:
+            raise ValueError(
+                f"year must be between {self.years.start} and {self.years.stop}"
+            )
+
+        match self.frequency:
+            case "monthly":
+                return self._monthly_catalog(year, month)
+            case "daily":
+                return self._daily_catalog(year, month)
+            case _:
+                raise ValueError(
+                    f"Invalid frequency {self.frequency} defined for this dataset."
+                )
+
+    def _monthly_catalog(
+        self, year: int | None = None, month: int | None = None
+    ) -> list["AtomicDataset"]:
+        if year is not None and month is not None:
+            return [AtomicDataset(self, year, month)]
+        if year is not None or month is not None:
+            raise ValueError(
+                "If one of year or month is specified, both must be specified."
+            )
+
         catalog = []
 
         for year, month in itertools.product(
@@ -465,7 +503,24 @@ class BaseDataset(abc.ABC):
 
         return catalog
 
-    def _daily_catalog(self) -> list["AtomicDataset"]:
+    def _daily_catalog(
+        self, year: int | None = None, month: int | None = None
+    ) -> list["AtomicDataset"]:
+        if year is not None and month is not None:
+            return [
+                AtomicDataset(self, year, month, day)
+                for day in range(
+                    1,
+                    pd.Timestamp(f"{year}-{month}-1").days_in_month + 1
+                    if not self.testing
+                    else 3,
+                )
+            ]
+        if year is not None or month is not None:
+            raise ValueError(
+                "If one of year or month is specified, both must be specified."
+            )
+
         catalog = []
 
         for year, month in itertools.product(

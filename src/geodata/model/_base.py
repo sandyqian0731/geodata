@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
+# Copyright 2023-2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -17,18 +17,295 @@
 import abc
 import hashlib
 import json
+import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Self
 
 import xarray as xr
 from tqdm.auto import tqdm
 
 from ..config import model_dir
-from ..datasets._base import AtomicDataset, BaseDataset
+from ..datasets._base import BaseDataset
 from ..logging import logger
-from ..utils import NpEncoder
+from ..utils import check_hash
+
+
+@dataclass
+class ModelResult:
+    """Model result class. This class is used to store the result of a model.
+    It contains the year, month, reference path, model path, and the hashes of the
+    reference and model datasets.
+
+    Args:
+        year (int): Year of the model.
+        month (int): Month of the model.
+        ref_path (Path): Path to the reference dataset.
+        path (Path): Path to the model dataset.
+        ref_hash (str): Hash of the reference dataset.
+        path_hash (str): Hash of the model dataset.
+    """
+
+    year: int
+    month: int
+    model: "BaseModel"
+
+    _hashes: dict[str, str] = field(default_factory=dict)
+    _prepared: bool = False
+
+    @property
+    def frequency(self) -> str:
+        """Frequency of the model."""
+        return self.model.frequency
+
+    @property
+    def module(self) -> str:
+        """Module of the model."""
+        return self.model.source.module
+
+    @property
+    def ref_path(self) -> Path:
+        """Path to the reference dataset."""
+        return (
+            self.model._ref_path
+            / self.model.source.weather_config
+            / f"{self.year:04d}"
+            / f"{self.month:02d}"
+        )
+
+    @property
+    def files(self) -> list[Path]:
+        """List of files in the model dataset. This could potentially include any
+        files that are not prepared yet."""
+
+        atomic_files = self.model.source.get_monthly_catalog(self.year, self.month)
+        if atomic_files is None:
+            raise ValueError(
+                f"Model files for {self.year:04d}-{self.month:02d} not found."
+            )
+
+        files = []
+        for f in atomic_files:
+            p = f.path.relative_to(self.ref_path).with_stem(f.path.stem + ".params")
+            files.append(self.path / p)
+        return files
+
+    @property
+    def ref_files(self) -> list[Path]:
+        """List of files in the reference dataset."""
+
+        atomic_files = self.model.source.get_monthly_catalog(self.year, self.month)
+        if atomic_files is None:
+            raise ValueError(
+                f"Reference files for {self.year:04d}-{self.month:02d} not found."
+            )
+
+        return [f.path for f in atomic_files if f.path.exists()]
+
+    @property
+    def ref_params(self) -> dict[Path, Path]:
+        """Reference parameters of the model."""
+
+        ref_params = {}
+        for file in self.ref_files:
+            if file.name.endswith(".params.nc"):
+                ref_params[file] = self.path / file.name
+            else:
+                ref_params[file] = self.path / f"{file.stem}.params.nc"
+        return ref_params
+
+    @property
+    def path(self) -> Path:
+        """Path to the model dataset."""
+        return (
+            model_dir
+            / self.module
+            / self.model.__class__.__name__
+            / f"{self.year:04d}"
+            / f"{self.month:02d}"
+        )
+
+    @property
+    def prepared(self) -> bool:
+        """Check if the model is prepared.
+
+        Returns:
+            bool: True if prepared.
+        """
+        if not self._prepared:
+            self._prepared = self._check_prepared()
+        return self._prepared
+
+    def _check_prepared(self) -> bool:
+        """Check if the model is prepared.
+
+        Returns:
+            bool: True if prepared.
+        """
+
+        assert self.path is not None, "The model saving path has not been set yet."
+
+        if not (self.path / "meta.json").exists():
+            logger.warning(
+                "Model %s-%s does not have metadata. Please prepare the model first.",
+                self.year,
+                self.month,
+            )
+            return False
+
+        match self.frequency:
+            case "daily":
+                with ThreadPoolExecutor(
+                    max_workers=os.getenv("MAX_WORKERS")
+                ) as executor:
+                    files = [(f, self._hashes.get(f.name)) for f in self.files]
+                    results = list(
+                        tqdm(
+                            executor.map(lambda t: check_hash(*t), files),
+                            total=len(files),
+                            unit="file",
+                            dynamic_ncols=True,
+                            desc=f"Model Files Integrity Check {self.year:04d}-{self.month:02d}",
+                        )
+                    )
+                for file, (is_valid, hash_value) in zip(files, results):
+                    if not is_valid:
+                        logger.warning(
+                            "File %s in model has been modified since model creation. Model is not prepared!",
+                            file,
+                        )
+                        return False
+                return True
+            case "monthly":
+                return check_hash(self.path / f"{self.month:02d}.params.nc")[0]
+            case _:
+                raise ValueError(
+                    f"Frequency {self.frequency} is not supported. Supported frequencies are: daily, monthly."
+                )
+
+    def register(self, dataset: xr.Dataset):
+        """Register the model result with the dataset.
+
+        Args:
+            dataset (xr.Dataset): Dataset to register.
+        """
+        if not isinstance(dataset, xr.Dataset):
+            raise ValueError(
+                f"Dataset must be an xarray Dataset, but got {type(dataset)}."
+            )
+
+        match self.frequency:
+            case "daily":
+                day = dataset.get("valid_time").dt.day.values[0]
+                dataset.to_netcdf(self.path / f"{day:02d}.params.nc")
+                with open(self.path / f"{day:02d}.params.nc", "rb") as f:
+                    self._hashes[f"{day:02d}.params.nc"] = hashlib.sha256(
+                        f.read()
+                    ).hexdigest()
+
+            case "monthly":
+                dataset.to_netcdf(self.path / f"{self.month:02d}.params.nc")
+                with open(self.path / f"{self.month:02d}.params.nc", "rb") as f:
+                    self._hashes[f"{self.month:02d}.params.nc"] = hashlib.sha256(
+                        f.read()
+                    ).hexdigest()
+
+            case _:
+                raise ValueError(
+                    f"Frequency {self.frequency} is not supported. Supported frequencies are: daily, monthly."
+                )
+
+    @classmethod
+    def from_year_month(cls, model: "BaseModel", year: int, month: int) -> Self:
+        """Create an AtomicModel from year and month.
+
+        Args:
+            model (BaseModel): BaseModel object.
+            year (int): Year of the model.
+            month (int): Month of the model.
+
+        Returns:
+            AtomicModel: AtomicModel object.
+        """
+
+        if not (1 <= month <= 12):
+            raise ValueError(f"Month {month} is not valid. Must be between 1 and 12.")
+        if not (2000 <= year <= 2100):
+            raise ValueError(
+                f"Year {year} is not valid. Must be between 2000 and 2100."
+            )
+
+        path = (
+            model_dir
+            / model.source.module
+            / model.__class__.__name__
+            / f"{year:04d}"
+            / f"{month:02d}"
+            / "meta.json"
+        )
+
+        if not path.exists():
+            return cls(model=model, year=year, month=month)
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        if data["year"] != year or data["month"] != month:
+            raise ValueError(
+                f"Model year {data['year']} and month {data['month']} do not match {year} and {month}."
+            )
+
+        return cls.from_dict(data, model)
+
+    def __repr__(self):
+        return f"AtomicModel(year={self.year}, month={self.month}, ref_path={self.ref_path}, path={self.path} {len(self.files)} / {len(self.ref_files)})"
+
+    @classmethod
+    def from_dict(cls, data: dict, model: "BaseModel") -> Self:
+        """Create an AtomicModel from a dictionary.
+
+        Args:
+            data (dict): Dictionary with the model data.
+
+        Returns:
+            AtomicModel: AtomicModel object.
+        """
+
+        inst = cls(year=data["year"], month=data["month"], model=model)
+
+        inst._hashes = data.get("hashes", {})
+        inst.prepared
+        return inst
+
+    def to_dict(self) -> dict:
+        """Convert the AtomicModel to a dictionary.
+
+        Returns:
+            dict: Dictionary with the model data.
+        """
+
+        return {
+            "year": self.year,
+            "month": self.month,
+            "ref_path": str(self.ref_path),
+            "path": str(self.path),
+            "hashes": self._hashes,
+            "prepared": self.prepared,
+        }
+
+    def dump(self):
+        """Dump the model result to a file.
+
+        Returns:
+            dict: Dictionary with the model data.
+        """
+        info = self.to_dict()
+
+        with open(self.path / "meta.json", "w") as f:
+            json.dump(info, f, indent=4)
+        logger.info("Model result dumped to %s", self.path / "meta.json")
 
 
 class BaseModel(abc.ABC):
@@ -65,66 +342,65 @@ class BaseModel(abc.ABC):
 
         self.source = source
         self._extra_kwargs = kwargs
-        self._corrupt_metadata = False
         self._prepared = False
 
         self._ref_path = model_dir.parent / self.source.module
-        self._path = (
-            model_dir / self.type / self.__class__.__name__ / self.source.module
-        )
-
-        if (meta_path := self._path / "meta.json").exists():
-            try:
-                with open(meta_path, encoding="utf_8") as f:
-                    self.metadata = json.load(f)
-
-                # NOTE: Double-check if we have an updated dataset
-                # If we do, we need to re-prepare the model
-                _source_files = self.extract_dataset_metadata(source).get(
-                    "files_orig", {}
-                )
-
-                if set(_source_files.keys()) - set(
-                    self.metadata.get("files_orig", {}).keys()
-                ):
-                    logger.warning(
-                        "New dataset files have been downloaded since last model "
-                        "preparation. Model will need to be re-prepared!",
-                        meta_path,
-                    )
-                    self.metadata = self.extract_dataset_metadata(
-                        source, self.metadata.get("files_prepared", {})
-                    )
-
-            except json.JSONDecodeError:
-                logger.warning(
-                    "Metadata file %s is corrupted. Model will be re-prepared.",
-                    meta_path,
-                )
-                self._corrupt_metadata = True
-                self.metadata = self.extract_dataset_metadata(source)
-
-        else:
-            # NOTE: We only store metadata in transient fashion until preparation is done
-            self.metadata = self.extract_dataset_metadata(source)
+        self._results = self._prepare_results()
 
     def __repr__(self):
         return f"Model(source={self.source}, type={self.type})"
 
     @property
-    def name(self) -> str:
-        """Name of the model."""
-        return f"{self.metadata['name']}_{self.type}"
-
-    @property
-    def module(self) -> str:
-        """Module of the model."""
-        return self.metadata["module"]
+    def frequency(self) -> str:
+        """Frequency of the model."""
+        return self.source.frequency
 
     @property
     @abc.abstractmethod
     def type(self) -> str:
         """Type of the model."""
+
+    def _prepare_results(self) -> dict[int, dict[int, ModelResult]]:
+        """Prepare the results of the model.
+
+        Returns:
+            dict: Dictionary with the results of the model.
+        """
+
+        years = list(range(self.source.years.start, self.source.years.stop + 1))
+        months = list(range(self.source.months.start, self.source.months.stop + 1))
+
+        results: dict[int, dict[int, ModelResult]] = {}
+        for year in years:
+            results[year] = {}
+            for month in months:
+                results[year][month] = ModelResult.from_year_month(self, year, month)
+                results[year][month].path.mkdir(parents=True, exist_ok=True)
+
+        return results
+
+    @property
+    def results(self):
+        """Get the results of the model.
+
+        Returns:
+            dict: Dictionary with the results of the model.
+        """
+        return self._results
+
+    @property
+    def flattened_results(self) -> list[ModelResult]:
+        """Flatten the results of the model.
+
+        Returns:
+            list: List of ModelResult objects.
+        """
+
+        return [
+            self._results[year][month]
+            for year in self._results
+            for month in self._results[year]
+        ]
 
     def estimate(
         self,
@@ -158,50 +434,6 @@ class BaseModel(abc.ABC):
             use_real_data=use_real_data,
         )
 
-    def extract_dataset_metadata(
-        self, dataset: BaseDataset, prepared: dict[str, str] | None = None
-    ) -> dict:
-        if not dataset.downloaded:
-            raise ValueError("The source dataset for this model is not prepared.")
-
-        logger.info("Using dataset %s", dataset.module)
-
-        metadata = {}
-
-        metadata["name"] = metadata["module"] = dataset.module
-
-        if isinstance(dataset.years, slice):
-            metadata["years"] = dataset.years.start, dataset.years.stop
-        if isinstance(dataset.months, slice):
-            metadata["months"] = dataset.months.start, dataset.months.stop
-
-        metadata["weather_data_config"] = dataset.weather_config
-
-        # NOTE: file paths for estimation parameters will be added later in the prepare step
-        metadata["files_prepared"] = {} if prepared is None else prepared
-        metadata["files_orig"] = {}
-
-        def compute_hash(d: AtomicDataset):
-            with open(d.path, "rb") as f:
-                return str(Path(d.path).relative_to(self._ref_path)), hashlib.sha256(
-                    f.read()
-                ).hexdigest()
-
-        with ThreadPoolExecutor() as executor:
-            results = list(
-                tqdm(
-                    executor.map(compute_hash, dataset.catalog),
-                    total=len(dataset.catalog),
-                    unit="file",
-                    dynamic_ncols=True,
-                    desc="Original Files Integrity Check",
-                )
-            )
-
-        metadata["files_orig"] = dict(results)
-
-        return metadata
-
     @property
     def prepared(self) -> bool:
         """Check if the model is prepared.
@@ -215,121 +447,49 @@ class BaseModel(abc.ABC):
         return self._prepared
 
     def _check_prepared(self) -> bool:
-        assert self._path is not None, "The model saving path has not been set yet."
-
-        nc4_path: Path = self._path / "nc4"
-        meta_path: Path = self._path / "meta.json"
-
-        if not nc4_path.exists() or not meta_path.exists() or self._corrupt_metadata:
-            return False
-
-        with open(meta_path, encoding="utf-8") as f:
-            metadata_loaded = json.load(f)
-            if set(metadata_loaded.keys()) != self.metadata_keys:
-                return False
-
-        if len(self.metadata["files_orig"]) != len(self.metadata["files_prepared"]):
-            return False
-
-        nc4_rel_path = nc4_path.relative_to(self._path)
-        for fp in self.metadata["files_orig"]:
-            fp_prepared = str(nc4_rel_path / Path(fp).with_suffix(".params.nc4"))
-
-            if fp_prepared not in self.metadata["files_prepared"]:
-                return False
-
-            with open(self._ref_path / fp, "rb") as f:
-                if (
-                    self.metadata["files_orig"][fp]
-                    != hashlib.sha256(f.read()).hexdigest()
-                ):
-                    logger.warning(
-                        "File %s in source dataset has been modified since model creation. Model is not prepared!",
-                        fp,
-                    )
+        for year in self._results:
+            for month in self._results[year]:
+                if not self._results[year][month].prepared:
                     return False
-
-            with open(self._path / fp_prepared, "rb") as f:
-                if (
-                    self.metadata["files_prepared"][fp_prepared]
-                    != hashlib.sha256(f.read()).hexdigest()
-                ):
-                    logger.warning(
-                        "Parameter file %s in model has been modified since model creation."
-                        " This file will be re-prepared again.",
-                        fp_prepared,
-                    )
-                    del self.metadata["files_prepared"][fp_prepared]
-                    return False
-
         return True
 
     def prepare(self, force: bool = False):
         """Prepare the model.
 
         Args:
-            force (bool, optional): Force re-prepare the model. Defaults to False."""
+            force (bool, optional): Force re-prepare the model. Defaults to False.
+        """
 
         self._prepared = False  # NOTE: force re-checking preparedness here
         if self.prepared and not force:
             logger.info("The model is already prepared.")
             return
 
-        shutil.rmtree(self._path, ignore_errors=True)
-        (self._path / "nc4").mkdir(exist_ok=True, parents=True)
+        for result in self.flattened_results:
+            if not result.prepared:
+                shutil.rmtree(result.path, ignore_errors=True)
+                result.path.mkdir(parents=True, exist_ok=True)
 
-        self.metadata["files_prepared"] = {}
-        for fp in self._prepare_dataset():
-            with open(self._path / fp, "rb") as f:
-                self.metadata["files_prepared"][fp] = hashlib.sha256(
-                    f.read()
-                ).hexdigest()
+                for ref in tqdm(result.ref_params):
+                    if not ref.exists():
+                        raise FileNotFoundError(f"Reference file {ref} does not exist.")
+                    ref_ds = xr.open_dataset(ref)
+                    prepared_ds = self._prepare_dataset(ref_ds)
+                    ref_ds.close()
+                    result.register(prepared_ds)
 
-        with open(self._path / "meta.json", "w", encoding="utf-8") as f:
-            json.dump(self.metadata, f, indent=4, cls=NpEncoder)
-
-        if len(set(self.metadata["files_orig"])) != len(
-            set(self.metadata["files_prepared"])
-        ):
-            logger.warning(
-                "The number of original files and prepared files do not match. "
-                "This may indicate an issue with the preparation process. Partially prepared files were saved."
-            )
-            return
-
-        logger.info("Finished preparing model.")
-
-    @property
-    def files_orig(self):
-        """Get the original files. of the model."""
-
-        files_orig = [self._ref_path / p for p in self.metadata["files_orig"]]
-        return files_orig
-
-    @property
-    def files_prepared(self):
-        """Get the prepared files of the model."""
-        self._check_prepared()  # Eliminate any corrupt files
-
-        files_prepared = [self._path / p for p in self.metadata["files_prepared"]]
-        return files_prepared
-
-    @property
-    def files_unprepared(self):
-        """Get the unprepared files of the model."""
-
-        original = set(self.metadata["files_orig"].keys())
-        prepared = set(self.metadata["files_prepared"].keys())
-
-        unprepared = original - prepared
-        return list(unprepared)
+            result.dump()
+        logger.info("Model prepared successfully.")
 
     @abc.abstractmethod
-    def _prepare_dataset(self) -> list:
-        """Prepare the model from a dataset.
+    def _prepare_dataset(self, source: xr.Dataset) -> xr.Dataset:
+        """Prepare the parameters of a specific source dataset file.
+
+        Args:
+            source (xr.Dataset): Source dataset.
 
         Returns:
-            list: List of files.
+            xr.Dataset: Prepared parameter dataset.
         """
 
     @abc.abstractmethod
@@ -355,13 +515,3 @@ class BaseModel(abc.ABC):
         Returns:
             xr.DataArray: Dataset with wind speed.
         """
-
-    @property
-    def files(self):
-        if "files_prepared" not in self.metadata or "files_orig" not in self.metadata:
-            return []
-
-        files_prepared = [self._path / p for p in self.metadata["files_prepared"]]
-        files_orig = [self._ref_path / p for p in self.metadata["files_orig"]]
-
-        return files_prepared + files_orig

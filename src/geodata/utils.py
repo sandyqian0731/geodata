@@ -1,4 +1,4 @@
-# Copyright 2023 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
+# Copyright 2023, 2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -14,7 +14,9 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 
+import hashlib
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -87,3 +89,29 @@ def ensure_slice(obj: slice | list):
         return obj
     else:
         raise TypeError("Input must be a slice or a list.")
+
+
+def check_hash(file: Path, saved_hash: str | None = None) -> tuple[bool, str]:
+    """Check if the hash of a file matches the given hash.
+
+    Args:
+        file (Path): The path to the file.
+        saved_hash (str | None): The hash to compare against. If None, the function will compute the hash of the file.
+            If provided, the function will compare the computed hash with this value.
+            If the hashes match, the function will return True and the computed hash.
+            If the hashes do not match, the function will return False and the computed hash.
+
+    Returns:
+        tuple[bool, str]: A tuple containing a boolean indicating if the hash matches and the computed hash.
+    """
+
+    if not file.exists():
+        return False, ""
+
+    with open(file, "rb") as f:
+        computed_hash = hashlib.sha256(f.read()).hexdigest()
+
+    if saved_hash is None:
+        return True, computed_hash
+    else:
+        return computed_hash == saved_hash, computed_hash

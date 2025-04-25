@@ -93,7 +93,7 @@ class WindExtrapolationModel(WindBaseModel):
 
     SUPPORTED_WEATHER_DATA_CONFIGS = {"slv_flux_hourly"}
 
-    def _prepare_fn(
+    def _prepare_dataset(
         self,
         ds: xr.Dataset,
         compute_lml: bool = True,

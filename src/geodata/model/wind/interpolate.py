@@ -1,4 +1,4 @@
-# Copyright 2024 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
+# Copyright 2024-2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -140,7 +140,7 @@ class WindInterpolationModel(WindBaseModel):
 
     SUPPORTED_WEATHER_DATA_CONFIGS = {"wind_3d_hourly"}
 
-    def _prepare_fn(
+    def _prepare_dataset(
         self,
         ds: xr.Dataset,
         half_precision: bool = True,
