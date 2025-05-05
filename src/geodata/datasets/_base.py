@@ -20,7 +20,7 @@ import itertools
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Type
+from typing import Literal, Type, TypeVar
 
 import pandas as pd
 import xarray as xr
@@ -30,8 +30,9 @@ from ..config import DATASET_ROOT_PATH
 from ..types import BoundRange, CoordRange, DateRange
 
 logger = logging.getLogger(__name__)
+DatasetType = TypeVar("DatasetType", bound="BaseDataset")
 
-_registry: dict[str, Type["BaseDataset"]] = {}
+_registry: dict[str, DatasetType] = {}
 
 
 @dataclasses.dataclass
@@ -41,7 +42,7 @@ class AtomicDataset:
     and integrity checking of these datasets.
     """
 
-    dataset: "BaseDataset"
+    dataset: DatasetType
     year: int
     month: int
     day: int | None = None
@@ -50,7 +51,7 @@ class AtomicDataset:
     spinup: bool | None = None
 
     def __post_init__(self):
-        if not isinstance(self.dataset, BaseDataset):
+        if not isinstance(self.dataset, DatasetType):
             raise ValueError("dataset must be an instance of BaseDataset")
 
     @property

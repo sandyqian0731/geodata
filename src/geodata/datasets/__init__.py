@@ -14,10 +14,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+
 from . import era5, merra2
+from ._base import DatasetType
 from ._base import _registry as registry
 
-__all__ = ["era5", "merra2", "registry", "register_hrrr"]
+__all__ = ["era5", "merra2", "registry", "register_hrrr", "DatasetType"]
 
 
 def register_hrrr():
