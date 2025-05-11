@@ -18,8 +18,10 @@ import hashlib
 import json
 from pathlib import Path
 
+import dask.array as da
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 
 def dummy_njit(f=None, *args, **kwargs):
@@ -115,3 +117,66 @@ def check_hash(file: Path, saved_hash: str | None = None) -> tuple[bool, str]:
         return True, computed_hash
     else:
         return computed_hash == saved_hash, computed_hash
+
+
+def rechunk_dataset(
+    data: xr.DataArray | xr.Dataset,
+    target_chunk_bytes: int = 20 * 1024**2,
+    force_full_chunk_dims: list[str] | None = None,
+):
+    """
+    Rechunk xarray DataArray or Dataset to maximize chunk size
+    under a memory limit, while forcing certain dimensions to be unchunked
+    (i.e., use only one chunk across that dimension).
+
+    Parameters:
+        data: xr.DataArray or xr.Dataset
+        target_chunk_bytes: maximum memory per chunk (in bytes)
+        force_full_chunk_dims: list of dimension names to not chunk (single chunk along that dim)
+    """
+    if force_full_chunk_dims is None:
+        force_full_chunk_dims = []
+
+    if isinstance(data, xr.Dataset):
+        vars_to_chunk = {
+            name: rechunk_dataset(var, target_chunk_bytes, force_full_chunk_dims)
+            for name, var in data.data_vars.items()
+        }
+        return data.assign(vars_to_chunk)
+
+    if not isinstance(data.data, da.Array):
+        raise ValueError("Data must be a Dask-backed xarray object")
+
+    shape = data.shape
+    dims = data.dims
+    itemsize = data.dtype.itemsize
+
+    # Start with full dims
+    chunk_shape = list(shape)
+    dim_to_index = {dim: i for i, dim in enumerate(dims)}
+
+    # Force full chunks on specified dims
+    for dim in force_full_chunk_dims:
+        if dim in dim_to_index:
+            chunk_shape[dim_to_index[dim]] = shape[dim_to_index[dim]]
+
+    # Reduce non-fixed dims to fit memory budget
+    while True:
+        est_bytes = np.prod(chunk_shape) * itemsize
+        if est_bytes <= target_chunk_bytes:
+            break
+
+        # Pick largest non-fixed dimension to halve
+        candidates = [
+            (i, size)
+            for i, size in enumerate(chunk_shape)
+            if dims[i] not in force_full_chunk_dims and size > 1
+        ]
+        if not candidates:
+            break  # Can't reduce further
+
+        i, _ = max(candidates, key=lambda x: x[1])
+        chunk_shape[i] = max(1, chunk_shape[i] // 2)
+
+    chunk_dict = dict(zip(dims, chunk_shape))
+    return data.chunk(chunk_dict)

@@ -51,7 +51,7 @@ class AtomicDataset:
     spinup: bool | None = None
 
     def __post_init__(self):
-        if not isinstance(self.dataset, DatasetType):
+        if not isinstance(self.dataset, BaseDataset):
             raise ValueError("dataset must be an instance of BaseDataset")
 
     @property
