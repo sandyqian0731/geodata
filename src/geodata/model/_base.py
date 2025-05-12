@@ -26,6 +26,19 @@ from ..datasets._base import BaseDataset
 from ..logging import logger
 from .results import DailyModelResult, MonthlyModelResult, ResultType
 
+try:
+    import h5netcdf
+
+    XR_PARALLEL = True
+    XR_ENGINE = "h5netcdf"
+except ImportError:
+    XR_PARALLEL = False
+    XR_ENGINE = None
+    logger.warning(
+        "h5netcdf is not installed. Parallel reading of netCDF files will be disabled. "
+        "This could have some performance implications."
+    )
+
 
 class BaseModel(abc.ABC):
     """Base class for geospatial modeling.
@@ -158,7 +171,7 @@ class BaseModel(abc.ABC):
             results = self.get_result_year_month(years, months)
 
         files = sum([result.files for result in results], [])
-        params = xr.open_mfdataset(files)
+        params = xr.open_mfdataset(files, engine=XR_ENGINE, parallel=XR_PARALLEL)
 
         if xs is not None:
             params = params.sel(x=xs)
@@ -200,11 +213,13 @@ class BaseModel(abc.ABC):
             return
 
         for result in tqdm(self.flattened_results):
-            if not result.prepared:
+            if not result.prepared or force:
                 shutil.rmtree(result.path, ignore_errors=True)
                 result.path.mkdir(parents=True, exist_ok=True)
 
-                with xr.open_mfdataset(result.ref_files) as ds:
+                with xr.open_mfdataset(
+                    result.ref_files, engine=XR_ENGINE, parallel=XR_PARALLEL
+                ) as ds:
                     prepared_ds = self._prepare_dataset(ds)
                     result.register(prepared_ds)
 
