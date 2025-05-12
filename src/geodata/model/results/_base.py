@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+
+from __future__ import annotations
+
 import abc
 import json
 import logging
@@ -44,7 +47,7 @@ class BaseModelResult(abc.ABC):
 
     year: int
     month: int
-    model: "BaseModel"
+    model: BaseModel
 
     _hashes: dict[str, str] = field(default_factory=dict)
     _prepared: bool = False
@@ -157,7 +160,7 @@ class BaseModelResult(abc.ABC):
         """
 
     @classmethod
-    def from_year_month(cls, model: "BaseModel", year: int, month: int) -> Self:
+    def from_year_month(cls, model: BaseModel, year: int, month: int) -> Self:
         """Create an ModelResult from a year and month.
 
         Args:
@@ -202,7 +205,7 @@ class BaseModelResult(abc.ABC):
         return f"AtomicModel(year={self.year}, month={self.month}, ref_path={self.ref_path}, path={self.path} {len(self.files)} / {len(self.ref_files)})"
 
     @classmethod
-    def from_dict(cls, data: dict, model: "BaseModel") -> Self:
+    def from_dict(cls, data: dict, model: BaseModel) -> Self:
         """Create an AtomicModel from a dictionary.
 
         Args:

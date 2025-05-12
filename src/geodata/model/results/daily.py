@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+
 import hashlib
 import logging
 import os
@@ -28,6 +29,13 @@ from geodata.utils import check_hash
 from ._base import BaseModelResult
 
 logger = logging.getLogger(__name__)
+
+try:
+    import h5netcdf
+
+    XR_ENGINE = "h5netcdf"
+except ImportError:
+    XR_ENGINE = None
 
 
 @dataclass
@@ -93,7 +101,7 @@ class DailyModelResult(BaseModelResult):
         paths = [self.path / f"{day:02d}.nc" for day in days]
 
         logger.debug("Saving model results to %s", self.path)
-        xr.save_mfdataset(datasets, paths)
+        xr.save_mfdataset(datasets, paths, engine=XR_ENGINE)
 
         # Write the hash file for integrity checking
         with ThreadPoolExecutor() as executor:
