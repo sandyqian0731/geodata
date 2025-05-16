@@ -15,6 +15,8 @@
 
 
 import abc
+import importlib.util
+import os
 import shutil
 from typing import Optional
 
@@ -26,18 +28,27 @@ from ..datasets._base import BaseDataset
 from ..logging import logger
 from .results import DailyModelResult, MonthlyModelResult, ResultType
 
-try:
-    import h5netcdf
-
+if importlib.util.find_spec("h5netcdf") is not None:
     XR_PARALLEL = True
     XR_ENGINE = "h5netcdf"
-except ImportError:
+else:
     XR_PARALLEL = False
     XR_ENGINE = None
     logger.warning(
         "h5netcdf is not installed. Parallel reading of netCDF files will be disabled. "
         "This could have some performance implications."
     )
+
+# Parse the MAX_WORKERS environment variable if present
+MAX_WORKERS = os.getenv("MAX_WORKERS")
+if MAX_WORKERS is not None:
+    try:
+        max_workers = int(MAX_WORKERS)
+    except ValueError:
+        logger.warning(
+            "MAX_WORKERS environment variable is not an integer. Using default value."
+        )
+        MAX_WORKERS = None
 
 
 class BaseModel(abc.ABC):
@@ -47,6 +58,7 @@ class BaseModel(abc.ABC):
         name (str): The name of the model.
         source (BaseDataset): The source of the model.
         interpolate (bool, optional): Interpolate the source to the same grid as the target. Defaults to False.
+        quick_check (bool, optional): Quick check for the model. Defaults to False. If True, the model parameters will be checked for presence, but not the integrity.
         **kwargs: Additional keyword arguments to pass to the model.
     """
 
@@ -62,6 +74,7 @@ class BaseModel(abc.ABC):
             raise ValueError("The source Dataset for this model is not prepared.")
 
         self.source = source
+        self.quick_check = kwargs.get("quick_check", False)
         self._extra_kwargs = kwargs
         self._prepared = False
 
@@ -163,6 +176,11 @@ class BaseModel(abc.ABC):
         Returns:
             xr.DataArray: Dataset with wind speed.
         """
+        if not self.prepared:
+            raise RuntimeError(
+                "The model is not prepared. Please prepare the model first."
+            )
+
         if years is None and months is None:
             results = self.flattened_results
         elif months is None:

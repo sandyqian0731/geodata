@@ -16,7 +16,6 @@
 
 import hashlib
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,16 +25,10 @@ from tqdm.auto import tqdm
 
 from geodata.utils import check_hash
 
+from .._base import MAX_WORKERS, XR_ENGINE
 from ._base import BaseModelResult
 
 logger = logging.getLogger(__name__)
-
-try:
-    import h5netcdf
-
-    XR_ENGINE = "h5netcdf"
-except ImportError:
-    XR_ENGINE = None
 
 
 @dataclass
@@ -53,7 +46,26 @@ class DailyModelResult(BaseModelResult):
             )
             return False
 
-        with ThreadPoolExecutor(max_workers=os.getenv("MAX_WORKERS")) as executor:
+        if self.model.quick_check:
+            # If the quick check is enabled, we only need to check the file hashes
+            # and not the actual data.
+            logger.debug(
+                "Quick check is enabled. Only checking file hashes for model %s-%s.",
+                self.year,
+                self.month,
+            )
+
+            for file in self.files:
+                if not file.exists():
+                    logger.warning(
+                        "File %s in model does not exist. Model is not prepared!",
+                        str(file),
+                    )
+                    return False
+
+            return True
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             files = [(f, self._hashes.get(f.name)) for f in self.files]
             results = list(
                 tqdm(
@@ -69,9 +81,10 @@ class DailyModelResult(BaseModelResult):
             if not is_valid:
                 logger.warning(
                     "File %s in model has been modified since model creation. Model is not prepared!",
-                    file,
+                    str(file[0]),
                 )
                 return False
+
         return True
 
     def register(self, dataset: xr.Dataset):
