@@ -25,7 +25,6 @@ from tqdm.auto import tqdm
 
 from geodata.utils import check_hash
 
-from .._base import MAX_WORKERS, XR_ENGINE
 from ._base import BaseModelResult
 
 logger = logging.getLogger(__name__)
@@ -64,6 +63,7 @@ class DailyModelResult(BaseModelResult):
                     return False
 
             return True
+        from .._base import MAX_WORKERS
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             files = [(f, self._hashes.get(f.name)) for f in self.files]
@@ -114,6 +114,9 @@ class DailyModelResult(BaseModelResult):
         paths = [self.path / f"{day:02d}.nc" for day in days]
 
         logger.debug("Saving model results to %s", self.path)
+
+        from .._base import XR_ENGINE
+
         xr.save_mfdataset(datasets, paths, engine=XR_ENGINE)
 
         # Write the hash file for integrity checking

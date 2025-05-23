@@ -39,7 +39,12 @@ Example:
     >>> model.estimate(xs=slice(1, 2), ys=slice(1, 2), years=slice(2010, 2010), months=slice(1, 2))
 """
 
+import xarray as xr
+
+from ...resource import get_windturbineconfig
 from .._base import BaseModel
+
+from scipy.interpolate import interp1d
 
 HEIGHTS = {"u50m": 50, "u10m": 10, "u2m": 2}
 
@@ -54,3 +59,64 @@ class WindBaseModel(BaseModel):
     """
 
     type: str = "wind"
+
+    def estimate_power(
+        self,
+        turbine: str,
+        xs: slice | None = None,
+        ys: slice | None = None,
+        years: slice | None = None,
+        months: slice | None = None,
+        include_raw_power: bool = False,
+    ) -> None:
+        """Estimate wind speed at the given locations and times.
+
+        Args:
+            turbine (str): Turbine name.
+            xs (slice, optional): X slice. Defaults to None.
+            ys (slice, optional): Y slice. Defaults to None.
+            years (slice, optional): Year slice. Defaults to None.
+            months (slice, optional): Month slice. Defaults to None.
+            include_raw_power (bool, optional): Include raw power output. Defaults to False.
+
+        Returns:
+            xr.DataArray: Estimated wind speed.
+        """
+
+        # Get the wind turbine configuration
+        try:
+            turbineconf = get_windturbineconfig(turbine)
+        except FileNotFoundError:
+            raise ValueError(f"Wind turbine configuration '{turbine}' not found.")
+
+        speed = self.estimate(
+            years=years, months=months, xs=xs, ys=ys, height=turbineconf["hub_height"]
+        )
+
+        interp_fn = interp1d(
+            turbineconf["V"],
+            turbineconf["POW"],
+            bounds_error=False,
+            fill_value="extrapolate",
+        )
+
+        # Calculate the power output
+        power = xr.apply_ufunc(
+            interp_fn,
+            speed,
+            vectorize=True,
+            dask="parallelized",
+            output_dtypes=[float],
+        )
+
+        if include_raw_power:
+            # Calculate the capacity factor
+            cf: xr.DataArray = power / turbineconf["P"]
+            cf.attrs["units"] = "dimensionless"
+            cf.attrs["long_name"] = "Capacity factor"
+            cf.attrs["description"] = "Capacity factor of the wind turbine"
+            cf.attrs["turbine"] = turbine
+
+            return xr.Dataset({"power": power, "cf": cf})
+
+        return xr.Dataset({"cf": power / turbineconf["P"]})
