@@ -43,6 +43,7 @@ class ERA5WindSolarMonthlyDataset(ERA5WindSolarHourlyDataset):
             - 100m_u_component_of_wind
             - 100m_v_component_of_wind
             - 2m_temperature
+            - 2m_dew_point_temperature
             - runoff
             - soil_temperature_level_4
             - surface_net_solar_radiation
