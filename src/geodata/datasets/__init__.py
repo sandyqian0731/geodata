@@ -15,6 +15,13 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 
+"""A interface to download and manage geospatial datasets.
+
+Attributes:
+    registry (dict): Registry of available datasets. You can retrieve relevant dataset classes using `registry.get(<weather_data_config>)`.
+    DatasetType (type): A type to aid type hinting dataset classes.
+"""
+
 from . import era5, merra2
 from ._base import DatasetType
 from ._base import _registry as registry
@@ -23,5 +30,6 @@ __all__ = ["era5", "merra2", "registry", "register_hrrr", "DatasetType"]
 
 
 def register_hrrr():
-    """Register the HRRR dataset with the registry."""
+    """Register the HRRR dataset with the registry. By default, the HRRR dataset is not registered to avoid import overhead with the HRRR Herbie package.
+    This function can be called to register the HRRR dataset when needed."""
     from . import hrrr  # noqa: F401
