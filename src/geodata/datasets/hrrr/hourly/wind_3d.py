@@ -19,7 +19,7 @@ import os
 
 import pandas as pd
 import xarray as xr
-from herbie import FastHerbie, Herbie
+from herbie import FastHerbie
 
 from ....logging import redirect_stdout_to_logger
 from ..._base import AtomicDataset
@@ -58,68 +58,35 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
             inclusive="left",
         )
 
-        fh = FastHerbie(
-            date_range,
-            model=self.module,
-            product=self.product,
-            max_threads=mp.cpu_count() * 2,
-            save_dir=self._herbie_save_dir.name,
-            priority=self._priority,
-        )
-
         with redirect_stdout_to_logger(logger, logging.INFO):
             logger.info(f"Downloading HRRR wind data in bulk for {year}/{month}")
+
+            fh = FastHerbie(
+                date_range,
+                model=self.module,
+                product=self.product,
+                max_threads=mp.cpu_count() * 2,
+                save_dir=self._herbie_save_dir.name,
+                priority=self._priority,
+            )
+
             fh.download(":[UV]GRD:[1,8]0 m")
             fh.download(":[UV]GRD:[1234] hybrid level")
             fh.download(":HGT:[1234] hybrid level")
 
-            uv_10 = []
-            uv_80 = []
-            uv_hybrid = []
-            hgt_hybrid = []
+            fh.xarray(":[UV]GRD:10 m", remove_grib=False).rename(
+                {"u10": "u", "v10": "v"}
+            ).to_netcdf(os.path.join(self._herbie_save_dir.name, "uv_10.nc"))
 
-            for hour in date_range:
-                h = Herbie(
-                    hour,
-                    model=self.module,
-                    product=self.product,
-                    save_dir=self._herbie_save_dir.name,
-                    priority=self._priority,
-                )
-
-                try:
-                    uv_10.append(
-                        h.xarray(":[UV]GRD:10 m", remove_grib=False).rename(
-                            {"u10": "u", "v10": "v"}
-                        )
-                    )
-                    uv_80.append(h.xarray(":[UV]GRD:80 m", remove_grib=False))
-                    uv_hybrid.append(
-                        h.xarray(":[UV]GRD:[1234] hybrid level", remove_grib=False)
-                    )
-                    hgt_hybrid.append(
-                        h.xarray(":HGT:[1234] hybrid level", remove_grib=False)
-                    )
-                except ValueError:
-                    logger.warning(f"No data found for {hour}, skipping.")
-
-            # Offload to disk temporarily to save memory
-            xr.concat(uv_10, dim="time").to_netcdf(
-                os.path.join(self._herbie_save_dir.name, "uv_10.nc")
-            )
-            del uv_10
-            xr.concat(uv_80, dim="time").to_netcdf(
+            fh.xarray(":[UV]GRD:80 m", remove_grib=False).to_netcdf(
                 os.path.join(self._herbie_save_dir.name, "uv_80.nc")
             )
-            del uv_80
-            xr.concat(uv_hybrid, dim="time").to_netcdf(
+            fh.xarray(":[UV]GRD:[1234] hybrid level", remove_grib=False).to_netcdf(
                 os.path.join(self._herbie_save_dir.name, "uv_hybrid.nc")
             )
-            del uv_hybrid
-            xr.concat(hgt_hybrid, dim="time").to_netcdf(
+            fh.xarray(":HGT:[1234] hybrid level", remove_grib=False).to_netcdf(
                 os.path.join(self._herbie_save_dir.name, "hgt_hybrid.nc")
             )
-            del hgt_hybrid
 
             uv_10 = xr.open_dataset(
                 os.path.join(self._herbie_save_dir.name, "uv_10.nc"), chunks="auto"
@@ -162,6 +129,8 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
                 del ds.attrs["search"]
                 del ds.attrs["local_grib"]
                 del ds.attrs["remote_grib"]
+                del ds["lon"]
+                del ds["lat"]
             except KeyError:
                 pass
 
