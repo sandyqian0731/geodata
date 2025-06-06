@@ -335,14 +335,26 @@ class BaseDataset(abc.ABC):
         return ds
 
     def trim_variables(
-        self, variables: Sequence[str] | None = None, **kwargs
+        self,
+        ds: xr.Dataset | xr.DataArray,
+        variables: Sequence[str] | None = None,
+        **kwargs,
     ) -> xr.Dataset | xr.DataArray:
         """Method to trim the dataset to only include the specified variables.
 
         Args:
+            ds: The dataset to trim.
             variables: A sequence of strings representing the variables to keep.
                 If None, we will keep the variables specified in the `variables`
                 attribute of the dataset.
+
+        Returns:
+            xr.Dataset | xr.DataArray: The trimmed dataset containing only the
+            specified variables.
+
+        Raises:
+            ValueError: If the dataset does not have a `variables` attribute
+                defined and no variables are specified.
         """
 
         if variables is None:
@@ -353,7 +365,7 @@ class BaseDataset(abc.ABC):
                 )
             variables: Sequence[str] = getattr(self, "variables")
 
-        return kwargs["ds"][variables]
+        return ds[variables]
 
     def __repr__(self):
         return "<Dataset Module={} Config={} Years={}-{} Months={}-{} {}{}>".format(
@@ -415,7 +427,6 @@ class BaseDataset(abc.ABC):
         xs: CoordRange,
         ys: CoordRange,
         yearmonths: xr.DataArray,
-        prepare_func,
         **meta_attrs,
     ):
         """A method that returns a list of tasks that can be run on the dataset."""

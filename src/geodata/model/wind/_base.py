@@ -60,14 +60,53 @@ class WindBaseModel(BaseModel):
 
     type: str = "wind"
 
-    def estimate_power(
+    def estimate(
+        self,
+        years: slice | None = None,
+        months: slice | None = None,
+        xs: slice | None = None,
+        ys: slice | None = None,
+        **kwargs,
+    ) -> xr.DataArray:
+        """Estimate wind speed or CF at the given locations and times. If a turbine is
+        specified, the CF is calculated based on the wind speed and the turbine's power curve.
+        Otherwise, pass in the `height` keyword argument to estimate wind speed at a specific height.
+
+        Args:
+            years (slice, optional): Years.
+            months (slice, optional): Months. If None, all months are estimated.
+            xs (slice, optional): X coordinates. If None, all x coordinates in source are estimated.
+            ys (slice, optional): Y coordinates. If None, all y coordinates in source are estimated.
+            **kwargs: Additional keyword arguments to pass to the model.
+                - `turbine` (str): Name of the wind turbine to estimate power output.
+                - `height` (int): Height at which to estimate wind speed. If not specified, the model will use the default height.
+
+        Raises:
+            ValueError: If neither 'turbine' nor 'height' is specified in kwargs.
+
+        Returns:
+            xr.DataArray: Estimated wind speed.
+        """
+
+        if "turbine" in kwargs:
+            return self._estimate_power(
+                years=years, months=months, xs=xs, ys=ys, **kwargs
+            )
+
+        if "height" not in kwargs:
+            raise ValueError(
+                "Either 'turbine' or 'height' must be specified to estimate wind speed."
+            )
+
+        return super().estimate(years, months, xs, ys, **kwargs)
+
+    def _estimate_power(
         self,
         turbine: str,
         xs: slice | None = None,
         ys: slice | None = None,
         years: slice | None = None,
         months: slice | None = None,
-        include_raw_power: bool = False,
     ) -> None:
         """Estimate wind speed at the given locations and times.
 
@@ -77,7 +116,6 @@ class WindBaseModel(BaseModel):
             ys (slice, optional): Y slice. Defaults to None.
             years (slice, optional): Year slice. Defaults to None.
             months (slice, optional): Month slice. Defaults to None.
-            include_raw_power (bool, optional): Include raw power output. Defaults to False.
 
         Returns:
             xr.DataArray: Estimated wind speed.
@@ -108,15 +146,5 @@ class WindBaseModel(BaseModel):
             dask="parallelized",
             output_dtypes=[float],
         )
-
-        if include_raw_power:
-            # Calculate the capacity factor
-            cf: xr.DataArray = power / turbineconf["P"]
-            cf.attrs["units"] = "dimensionless"
-            cf.attrs["long_name"] = "Capacity factor"
-            cf.attrs["description"] = "Capacity factor of the wind turbine"
-            cf.attrs["turbine"] = turbine
-
-            return xr.Dataset({"power": power, "cf": cf})
 
         return xr.Dataset({"cf": power / turbineconf["P"]})
