@@ -16,6 +16,7 @@
 import logging
 import multiprocessing as mp
 import os
+from datetime import datetime, timedelta
 
 import pandas as pd
 import xarray as xr
@@ -51,12 +52,9 @@ class HRRR3DWindHourlyDataset(HRRRBaseDataset):
     def _download_file(self, file: AtomicDataset):
         year, month, day = file.year, file.month, file.day
 
-        date_range = pd.date_range(
-            f"{year}-{month}-{day}",
-            f"{year}-{month}-{day+1}",
-            freq="h",
-            inclusive="left",
-        )
+        start = datetime(year, month, day)
+        end = start + timedelta(days=1)
+        date_range = pd.date_range(start, end, freq="h", inclusive="left")
 
         with redirect_stdout_to_logger(logger, logging.INFO):
             logger.info(f"Downloading HRRR wind data in bulk for {year}/{month}")
