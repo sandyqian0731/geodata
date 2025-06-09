@@ -141,7 +141,7 @@ class MERRA2BaseDataset(BaseDataset):
         # Only keep the variables that are needed
         for var in ds.data_vars:
             if var.lower() not in self.variables:
-                ds = ds.drop(var)
+                ds = ds.drop_vars(var)
 
         # Change all variables to lowercase
         return ds.rename({var: var.lower() for var in ds.data_vars})
@@ -214,7 +214,6 @@ class MERRA2BaseDataset(BaseDataset):
         xs: CoordRange,
         ys: CoordRange,
         yearmonths: xr.DataArray,
-        prepare_func: callable,
         **meta_attrs,
     ):
         if not isinstance(xs, slice):
@@ -236,7 +235,7 @@ class MERRA2BaseDataset(BaseDataset):
 
                 return [
                     dict(
-                        prepare_func=prepare_func,
+                        prepare_func=cls.prepare_func,
                         xs=xs,
                         ys=ys,
                         year=year,
