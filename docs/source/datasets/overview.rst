@@ -11,7 +11,7 @@ Key Features
 
 - Supports the download and management of datasets from various sources, such as
   `ERA5 <https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5>`_ and
-  `MERRA2 <https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/>`.
+  `MERRA2 <https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/>`_.
 
 - Provides a consistent API for accessing geospatial data, regardless of the underlying
   data source.
@@ -87,3 +87,7 @@ Dataset's Interoperability with Cutout
 At the moment, the dataset classes are not interoperable with the `Cutout` class.
 In the future, we plan to consolidate the functionalities of the `Cutout` class into the
 dataset classes and the modeling module (see :doc:`here<../modeling/wind/index>`).
+
+For now, after downloading a dataset, a good point to move forward would be to use the
+:doc:`modeling module <../modeling/index>` to create a model that can do certain types
+of modeling with the dataset, such as wind speed estimation or solar PV generation.
