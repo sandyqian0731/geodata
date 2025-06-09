@@ -253,7 +253,6 @@ class MERRA2BaseDataset(BaseDataset):
             case "monthly":
                 return [
                     dict(
-                        prepare_func=prepare_func,
                         xs=xs,
                         ys=ys,
                         year=year,

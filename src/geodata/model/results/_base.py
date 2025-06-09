@@ -21,13 +21,15 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 import xarray as xr
 
 from geodata.config import model_dir
 
 if TYPE_CHECKING:
+    from typing import Self
+
     from .._base import BaseModel
 
 logger = logging.getLogger(__name__)
