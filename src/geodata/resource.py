@@ -23,6 +23,7 @@ Geospatial Data Collection and "Pre-Analysis" Tools
 import logging
 from operator import itemgetter
 
+
 import numpy as np
 import yaml
 from scipy.signal import fftconvolve
@@ -160,3 +161,15 @@ def windturbine_smooth(turbine, params):
         )
 
     return turbine
+
+
+def get_available_windturbines():
+    """Get a list of available wind turbine configurations."""
+    res_path = SRC_ROOT / "resources/windturbine"
+    return [p.stem for p in res_path.glob("*.yaml") if p.is_file()]
+
+
+def get_available_solarpanels():
+    """Get a list of available solar panel configurations."""
+    res_path = SRC_ROOT / "resources/solarpanel"
+    return [p.stem for p in res_path.glob("*.yaml") if p.is_file()]
