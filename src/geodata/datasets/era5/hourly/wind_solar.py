@@ -43,7 +43,7 @@ class ERA5WindSolarHourlyDataset(ERA5BaseDataset):
             - 100m_u_component_of_wind
             - 100m_v_component_of_wind
             - 2m_temperature
-            - 2m_dew_point_temperature
+            - 2m_dewpoint_temperature
             - runoff
             - soil_temperature_level_4
             - surface_net_solar_radiation
@@ -57,12 +57,12 @@ class ERA5WindSolarHourlyDataset(ERA5BaseDataset):
 
     weather_config = "wind_solar_hourly"
 
-    # Information that are needed for ERA5's API request
+    # Information that is needed for ERA5's API request
     variables = {
         "100m_u_component_of_wind": "u100",
         "100m_v_component_of_wind": "v100",
         "2m_temperature": "t2m",
-        "2m_dew_point_temperature": "d2m",
+        "2m_dewpoint_temperature": "d2m",
         "runoff": "ro",
         "soil_temperature_level_4": "stl4",
         "surface_net_solar_radiation": "ssr",
