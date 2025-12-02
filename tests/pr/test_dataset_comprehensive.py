@@ -74,7 +74,7 @@ from typing import Optional
 
 import xarray as xr
 
-from geodata.datasets import DatasetType, load_dataset
+from geodata.datasets import load_dataset
 
 logging.basicConfig(level=logging.INFO)
 
@@ -460,7 +460,7 @@ def test_data_dimensions():
             assert "y" in dims or "lat" in dims, "Should have y/lat dimension"
             
             # 3D data should have a level/height dimension
-            has_level_dim = any(dim in dims for dim in ["level", "height", "lev", "plev"])
+            _ = any(dim in dims for dim in ["level", "height", "lev", "plev"])
             
             ds.close()
             break  # Only check first file
