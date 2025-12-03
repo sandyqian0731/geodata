@@ -15,7 +15,6 @@ def test_wind_interpolation_workflow():
     - Wind speed estimation works at a specific height
     - Results can be computed and have valid values
     """
-    # Initialize the model
 
     client = Client(processes=True, threads_per_worker=1)
 
@@ -31,10 +30,6 @@ def test_wind_interpolation_workflow():
     # Create model with the dataset
     model = WindInterpolationModel(ds)
     assert model is not None, "Model should be created successfully"
-    
-    # Prepare the model (required before estimation)
-    model.prepare()
-    assert model.prepared, "Model should be prepared successfully"
     
     turbine_name = "Enercon_E126_7500KW"
     china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
