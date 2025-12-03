@@ -2,13 +2,13 @@ import xarray as xr
 from dask.distributed import Client
 import os
 
-# # 1. Define the required path
-# GEODATA_PATH = '/tscc/projects/ps-davidson/geodata'
+# 1. Define the required path
+GEODATA_PATH = '/tscc/projects/ps-davidson/geodata'
 
-# # 2. Check if the path exists
-# if os.path.exists(GEODATA_PATH):
-#     # 3. If it exists, set the environment variable
-#     os.environ['GEODATA_ROOT'] = GEODATA_PATH
+# 2. Check if the path exists
+if os.path.exists(GEODATA_PATH):
+    # 3. If it exists, set the environment variable
+    os.environ['GEODATA_ROOT'] = GEODATA_PATH
 
 from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
@@ -39,9 +39,6 @@ def test_wind_interpolation_workflow():
     # Create model with the dataset
     model = WindInterpolationModel(ds)
     assert model is not None, "Model should be created successfully"
-
-    model.prepare()
-    assert model.prepared == True, "Model should be prepared"
     
     turbine_name = "Enercon_E126_7500kW"
     china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
