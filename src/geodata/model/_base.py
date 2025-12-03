@@ -110,33 +110,42 @@ def _get_xr_engine() -> str | None:
         engine when Dask is being used on Linux to avoid the H5DSget_num_scales error.
     """
     if XR_ENGINE is None:
+        logger.debug("_get_xr_engine: XR_ENGINE is None, returning None")
         return None
+    
+    system = platform.system()
+    logger.debug(f"_get_xr_engine: Platform is {system}, XR_ENGINE is {XR_ENGINE}")
     
     # On Linux, if we're in a Dask worker or if Dask is being used,
     # switch to netcdf4 to avoid h5netcdf issues
-    if platform.system() == "Linux":
+    if system == "Linux":
         try:
             from dask.distributed import get_client, get_worker
             # Check if we're in a worker or if a Dask client exists
+            in_worker = False
+            has_client = False
             try:
                 get_worker()
-                # We're in a worker
-                # in_worker = True
+                in_worker = True
+                logger.debug("_get_xr_engine: Detected Dask worker on Linux")
             except ValueError:
                 # Not in a worker, but check if client exists
                 try:
                     get_client()
-                    # in_worker = False
+                    has_client = True
+                    logger.debug("_get_xr_engine: Detected Dask client on Linux (not in worker)")
                 except ValueError:
                     # No Dask client/worker
+                    logger.debug("_get_xr_engine: No Dask client/worker detected, using default engine")
                     return XR_ENGINE
             
             # If we're here, Dask is being used (either in worker or client exists)
             # Use netcdf4 engine to avoid h5netcdf issues
             if importlib.util.find_spec("netCDF4") is not None:
-                logger.debug(
-                    "Switching to netcdf4 engine on Linux with Dask "
-                    "to avoid h5netcdf HDF5 dimension scale issues."
+                logger.info(
+                    f"Switching to netcdf4 engine on Linux with Dask "
+                    f"(in_worker={in_worker}, has_client={has_client}) "
+                    f"to avoid h5netcdf HDF5 dimension scale issues."
                 )
                 return "netcdf4"
             else:
@@ -148,8 +157,10 @@ def _get_xr_engine() -> str | None:
                 return None
         except ImportError:
             # dask.distributed not available
+            logger.debug("_get_xr_engine: dask.distributed not available")
             pass
     
+    logger.debug(f"_get_xr_engine: Returning default engine {XR_ENGINE}")
     return XR_ENGINE
 
 
@@ -165,13 +176,20 @@ def _should_use_parallel_reading() -> bool:
         Even if we switch to netcdf4, parallel reading can still cause issues.
     """
     if not XR_PARALLEL_DEFAULT:
+        logger.debug("_should_use_parallel_reading: XR_PARALLEL_DEFAULT is False, returning False")
         return False
     
-    # Disable parallel reading if we're in a Dask worker on Linux or if
-    # Dask is using processes (which would cause files to be opened in workers)
-    if _is_in_dask_worker_on_linux() or _is_dask_using_processes_on_linux():
+    in_worker = _is_in_dask_worker_on_linux()
+    using_processes = _is_dask_using_processes_on_linux()
+    
+    if in_worker or using_processes:
+        logger.info(
+            f"_should_use_parallel_reading: Disabling parallel reading "
+            f"(in_worker={in_worker}, using_processes={using_processes})"
+        )
         return False
     
+    logger.debug(f"_should_use_parallel_reading: Returning {XR_PARALLEL_DEFAULT}")
     return XR_PARALLEL_DEFAULT
 
 # Parse the MAX_WORKERS environment variable if present
@@ -324,9 +342,12 @@ class BaseModel(abc.ABC):
             results = self.get_result_year_month(years, months)
 
         files = sum([result.files for result in results], [])
-        params = xr.open_mfdataset(
-            files, engine=_get_xr_engine(), parallel=_should_use_parallel_reading()
+        engine = _get_xr_engine()
+        parallel = _should_use_parallel_reading()
+        logger.info(
+            f"estimate: Opening {len(files)} files with engine={engine}, parallel={parallel}"
         )
+        params = xr.open_mfdataset(files, engine=engine, parallel=parallel)
 
         if xs is not None:
             params = params.sel(x=xs)
@@ -372,10 +393,15 @@ class BaseModel(abc.ABC):
                 shutil.rmtree(result.path, ignore_errors=True)
                 result.path.mkdir(parents=True, exist_ok=True)
 
+                engine = _get_xr_engine()
+                parallel = _should_use_parallel_reading()
+                logger.info(
+                    f"prepare: Opening {len(result.ref_files)} files with engine={engine}, parallel={parallel}"
+                )
                 with xr.open_mfdataset(
                     result.ref_files,
-                    engine=_get_xr_engine(),
-                    parallel=_should_use_parallel_reading(),
+                    engine=engine,
+                    parallel=parallel,
                 ) as ds:
                     prepared_ds = self._prepare_dataset(ds)
                     result.register(prepared_ds)
