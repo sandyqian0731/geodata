@@ -16,6 +16,7 @@ def main():
 
     ds_cls = load_dataset("wind_3d_hourly")
     ds = ds_cls(years=years, months=months)
+    ds.download()
 
     model = WindInterpolationModel(ds)
     print(model)
