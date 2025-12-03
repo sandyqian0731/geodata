@@ -1,19 +1,11 @@
-import xarray as xr
-from dask.distributed import Client
-import os
 import logging
+from dask.distributed import Client
 
-# 1. Define the required path
-GEODATA_PATH = '/tscc/projects/ps-davidson/geodata'
+import xarray as xr
 
-# 2. Check if the path exists
-if os.path.exists(GEODATA_PATH):
-    # 3. If it exists, set the environment variable
-    os.environ['GEODATA_ROOT'] = GEODATA_PATH
-
-from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
 from geodata.logging import logger
+from geodata.model.wind import WindInterpolationModel
 
 # Set logger to DEBUG level to see all debug messages
 logger.setLevel(logging.DEBUG)
@@ -78,3 +70,5 @@ def test_wind_interpolation_workflow():
     # Test that max value can be calculated (verifies data is valid and operations work)
     max_cf = cf_computed.max()
     assert max_cf is not None, "Max capacity factor should be calculable"
+
+    client.close()
