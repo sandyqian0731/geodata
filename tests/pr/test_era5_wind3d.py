@@ -1,5 +1,14 @@
 import xarray as xr
 from dask.distributed import Client
+import os
+
+# 1. Define the required path
+GEODATA_PATH = '/tscc/projects/ps-davidson/geodata'
+
+# 2. Check if the path exists
+if os.path.exists(GEODATA_PATH):
+    # 3. If it exists, set the environment variable
+    os.environ['GEODATA_ROOT'] = GEODATA_PATH
 
 from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
