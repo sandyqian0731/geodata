@@ -51,29 +51,9 @@ def _memoryview_safe(x: np.ndarray) -> np.ndarray:
     return x
 
 
-def _make_interp_coeff(x, y, *args, **kwargs):
-    """Compute interpolation coefficients for spline interpolation.
-    
-    Ensures x is properly formatted as a 1D C-contiguous array as required by scipy.
-    
-    Args:
-        x: 1D array of x-coordinates (heights)
-        y: Multi-dimensional array of y-values (wind speeds)
-        *args: Additional positional arguments
-        **kwargs: Additional keyword arguments (k, t, check_finite, etc.)
-    
-    Returns:
-        Spline coefficients array
-    """
-    # Ensure x is a 1D C-contiguous numpy array
-    x = np.ascontiguousarray(np.asarray(x, dtype=np.float64).flatten())
-    # Ensure y is a proper numpy array (can be multi-dimensional)
-    y = np.asarray(y, dtype=np.float64)
-    
-    # Make x memoryview-safe for Dask distributed
-    x = _memoryview_safe(x)
-    
-    return sinterp.make_interp_spline(x, y, *args, **kwargs).c
+def _make_interp_coeff(*args, **kwargs):
+    """Dummy function to handle interpolation coefficients."""
+    return sinterp.make_interp_spline(*args, **kwargs).c
 
 
 def _splrep(a: xr.DataArray, dim: Hashable, k: int = 3) -> xr.Dataset:
@@ -98,10 +78,6 @@ def _splrep(a: xr.DataArray, dim: Hashable, k: int = 3) -> xr.Dataset:
         # Allow x_new.dtype==M8[D] and x.dtype==M8[ns], or vice versa
         x = x.astype("M8[ns]").astype(float)
 
-    # Ensure x is a 1D C-contiguous numpy array before using it
-    x = np.ascontiguousarray(np.asarray(x, dtype=np.float64).flatten())
-    x = _memoryview_safe(x)
-    
     t = sinterp._bsplines._not_a_knot(x, k=k)
 
     if isinstance(a.data, array_type("dask")):
