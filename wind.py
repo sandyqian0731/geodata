@@ -1,6 +1,6 @@
 from dask.distributed import Client
 
-client = Client(processes=True, threads_per_worker=1)
+
 
 import os
 import xarray as xr
@@ -9,6 +9,8 @@ from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
 
 def main():
+    client = Client(processes=True, threads_per_worker=1)
+
     years = slice(2016, 2016)
     months = slice(1, 1)
 
@@ -30,6 +32,8 @@ def main():
 
     cf = cf.compute()
     cf.max()
+
+    client.close()
 
 if __name__ == "__main__":
     main()
