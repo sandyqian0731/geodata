@@ -1,6 +1,7 @@
 import xarray as xr
 from dask.distributed import Client
 import os
+import logging
 
 # 1. Define the required path
 GEODATA_PATH = '/tscc/projects/ps-davidson/geodata'
@@ -12,6 +13,10 @@ if os.path.exists(GEODATA_PATH):
 
 from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
+from geodata.logging import logger
+
+# Set logger to DEBUG level to see all debug messages
+logger.setLevel(logging.DEBUG)
 
 
 def test_wind_interpolation_workflow():
@@ -39,6 +44,9 @@ def test_wind_interpolation_workflow():
     # Create model with the dataset
     model = WindInterpolationModel(ds)
     assert model is not None, "Model should be created successfully"
+    
+    # Force re-preparation to see debug logs (comment out if you want to skip preparation)
+    model.prepare(force=True)
     
     turbine_name = "Enercon_E126_7500kW"
     china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
