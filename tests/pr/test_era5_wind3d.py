@@ -31,7 +31,7 @@ def test_wind_interpolation_workflow():
     model = WindInterpolationModel(ds)
     assert model is not None, "Model should be created successfully"
     
-    turbine_name = "Enercon_E126_7500KW"
+    turbine_name = "Enercon_E126_7500kW"
     china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
     xs = slice(china_bbox[0], china_bbox[2])
     ys = slice(china_bbox[3], china_bbox[1])
