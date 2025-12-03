@@ -79,7 +79,7 @@ def _is_dask_using_processes_on_linux() -> bool:
     try:
         from dask.distributed import get_client, get_worker
         try:
-            client = get_client()
+            get_client()
             # Check if we're in a worker (which means processes are being used)
             try:
                 get_worker()
@@ -121,12 +121,12 @@ def _get_xr_engine() -> str | None:
             try:
                 get_worker()
                 # We're in a worker
-                in_worker = True
+                # in_worker = True
             except ValueError:
                 # Not in a worker, but check if client exists
                 try:
                     get_client()
-                    in_worker = False
+                    # in_worker = False
                 except ValueError:
                     # No Dask client/worker
                     return XR_ENGINE
