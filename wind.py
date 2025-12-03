@@ -8,7 +8,7 @@ from geodata.datasets import load_dataset
 
 def main():
     # only for TSCC
-    os.environ['GEODATA_ROOT'] = '/tscc/nfs/home/kelong/geodata'
+    os.environ['GEODATA_ROOT'] = '/tscc/projects/ps-davidson/geodata'
     client = Client(processes=True, threads_per_worker=1)
 
     years = slice(2016, 2016)
