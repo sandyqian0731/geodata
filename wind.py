@@ -3,12 +3,23 @@ from dask.distributed import Client
 import os
 import xarray as xr
 
+# 1. Define the required path
+GEODATA_PATH = '/tscc/projects/ps-davidson/geodata'
+
+# 2. Check if the path exists
+if os.path.exists(GEODATA_PATH):
+    # 3. If it exists, set the environment variable
+    os.environ['GEODATA_ROOT'] = GEODATA_PATH
+    print(f"✅ Successfully set GEODATA_ROOT to: {GEODATA_PATH}")
+else:
+    # 4. If it doesn't exist, print a warning or informational message
+    print(f"⚠️ WARNING: Required path does not exist. Skipping setting GEODATA_ROOT: {GEODATA_PATH}")
+
 from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
 
 def main():
     # only for TSCC
-    os.environ['GEODATA_ROOT'] = '/tscc/projects/ps-davidson/geodata'
     client = Client(processes=True, threads_per_worker=1)
 
     years = slice(2016, 2016)
