@@ -122,8 +122,28 @@ def _splrep(a: xr.DataArray, dim: Hashable, k: int = 3) -> xr.Dataset:
     )
 
 
-def _splev_ker(c: np.ndarray, t: np.ndarray, k: int, height: np.ndarray) -> np.ndarray:
-    return np.atleast_1d(sinterp.splev(height, (t, c, k)))
+def _splev_ker(c: np.ndarray, t: np.ndarray, k: int, height) -> np.ndarray:
+    """Evaluate spline at given height.
+    
+    Ensures all arrays are C-contiguous numpy arrays as required by scipy.splev.
+    When called with vectorize=True, height should be a scalar for each call.
+    """
+    # Ensure arrays are proper numpy arrays and C-contiguous
+    # c should be 1D (coefficients along height dimension)
+    c = np.ascontiguousarray(np.asarray(c, dtype=np.float64).flatten())
+    # t should be 1D (knots)
+    t = np.ascontiguousarray(np.asarray(t, dtype=np.float64).flatten())
+    
+    # Convert height to scalar if it's an array (should be scalar when vectorized)
+    height = np.asarray(height, dtype=np.float64)
+    if height.ndim > 0:
+        height = height.item() if height.size == 1 else height.flatten()[0]
+    else:
+        height = height.item()
+    
+    # scipy.splev expects a scalar or 1D array for height
+    result = sinterp.splev(height, (t, c, k))
+    return np.atleast_1d(result)
 
 
 def _splev(da: xr.DataArray, height: float) -> xr.DataArray:
