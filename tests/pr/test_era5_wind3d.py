@@ -1,4 +1,5 @@
 import xarray as xr
+from dask.distributed import Client
 
 from geodata.model.wind import WindInterpolationModel
 from geodata.datasets import load_dataset
@@ -15,6 +16,9 @@ def test_wind_interpolation_workflow():
     - Results can be computed and have valid values
     """
     # Initialize the model
+
+    client = Client(processes=True, threads_per_worker=1)
+
     years = slice(2016, 2016)
     months = slice(1, 1)
 
