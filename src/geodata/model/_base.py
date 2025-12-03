@@ -17,6 +17,7 @@
 import abc
 import importlib.util
 import os
+import platform
 import shutil
 from typing import Optional
 
@@ -29,15 +30,51 @@ from ..logging import logger
 from .results import DailyModelResult, MonthlyModelResult, ResultType
 
 if importlib.util.find_spec("h5netcdf") is not None:
-    XR_PARALLEL = True
     XR_ENGINE = "h5netcdf"
+    XR_PARALLEL_DEFAULT = True
 else:
-    XR_PARALLEL = False
+    XR_PARALLEL_DEFAULT = False
     XR_ENGINE = None
     logger.warning(
         "h5netcdf is not installed. Parallel reading of netCDF files will be disabled. "
         "This could have some performance implications."
     )
+
+
+def _should_use_parallel_reading() -> bool:
+    """Determine if parallel reading should be used for xarray open_mfdataset.
+    
+    Returns:
+        bool: True if parallel reading should be used, False otherwise.
+        
+    Note:
+        h5netcdf has issues with HDF5 dimension scales when used in separate
+        Dask worker processes on Linux. This function disables parallel reading
+        in that case to avoid the H5DSget_num_scales error.
+    """
+    if not XR_PARALLEL_DEFAULT:
+        return False
+    
+    # Check if we're in a Dask worker process on Linux
+    if platform.system() == "Linux":
+        try:
+            from dask.distributed import get_worker
+            try:
+                get_worker()
+                # We're in a Dask worker on Linux - disable parallel reading
+                logger.debug(
+                    "Disabling h5netcdf parallel reading in Dask worker on Linux "
+                    "to avoid HDF5 dimension scale issues."
+                )
+                return False
+            except ValueError:
+                # Not in a worker process
+                pass
+        except ImportError:
+            # dask.distributed not available
+            pass
+    
+    return XR_PARALLEL_DEFAULT
 
 # Parse the MAX_WORKERS environment variable if present
 MAX_WORKERS = os.getenv("MAX_WORKERS")
@@ -189,7 +226,9 @@ class BaseModel(abc.ABC):
             results = self.get_result_year_month(years, months)
 
         files = sum([result.files for result in results], [])
-        params = xr.open_mfdataset(files, engine=XR_ENGINE, parallel=XR_PARALLEL)
+        params = xr.open_mfdataset(
+            files, engine=XR_ENGINE, parallel=_should_use_parallel_reading()
+        )
 
         if xs is not None:
             params = params.sel(x=xs)
@@ -236,7 +275,9 @@ class BaseModel(abc.ABC):
                 result.path.mkdir(parents=True, exist_ok=True)
 
                 with xr.open_mfdataset(
-                    result.ref_files, engine=XR_ENGINE, parallel=XR_PARALLEL
+                    result.ref_files,
+                    engine=XR_ENGINE,
+                    parallel=_should_use_parallel_reading(),
                 ) as ds:
                     prepared_ds = self._prepare_dataset(ds)
                     result.register(prepared_ds)
