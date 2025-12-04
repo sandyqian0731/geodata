@@ -22,8 +22,8 @@ from pathlib import Path
 
 import xarray as xr
 
-from ...._base import AtomicDataset
-from ..._base import ERA5BaseDataset
+from ..._base import AtomicDataset
+from .._base import ERA5BaseDataset
 
 logger = logging.getLogger(__name__)
 

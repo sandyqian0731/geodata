@@ -22,7 +22,7 @@ from pathlib import Path
 
 import xarray as xr
 
-from ...._base import AtomicDataset
+from ..._base import AtomicDataset
 from .hourly import ERA5WindSolarHourlyDataset
 
 logger = logging.getLogger(__name__)
