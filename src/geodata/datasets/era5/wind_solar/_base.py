@@ -19,7 +19,7 @@ import os
 import xarray as xr
 import numpy as np
 
-from ...types import PathLike
+from geodata.types import PathLike
 from .._base import ERA5BaseDataset, _subset_x_y_era5
 
 logger = logging.getLogger(__name__)

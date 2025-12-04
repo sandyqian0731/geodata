@@ -19,7 +19,7 @@ import os
 import numpy as np
 import xarray as xr
 
-from ...types import CoordRange, PathLike
+from geodata.types import CoordRange, PathLike
 from .._base import BaseDataset
 
 logger = logging.getLogger(__name__)
