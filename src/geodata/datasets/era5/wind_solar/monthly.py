@@ -22,8 +22,8 @@ from pathlib import Path
 
 import xarray as xr
 
-from ..._base import AtomicDataset
-from ..hourly.wind_solar import ERA5WindSolarHourlyDataset
+from ...._base import AtomicDataset
+from .hourly import ERA5WindSolarHourlyDataset
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +112,4 @@ class ERA5WindSolarMonthlyDataset(ERA5WindSolarHourlyDataset):
 
                 logger.info("Preprocessing complete with zipfile")
                 logger.info("Successfully downloaded to %s", save_path)
+
