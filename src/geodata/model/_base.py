@@ -17,6 +17,7 @@
 import abc
 import importlib.util
 import os
+import platform
 import shutil
 from typing import Optional
 
@@ -29,15 +30,167 @@ from ..logging import logger
 from .results import DailyModelResult, MonthlyModelResult, ResultType
 
 if importlib.util.find_spec("h5netcdf") is not None:
-    XR_PARALLEL = True
     XR_ENGINE = "h5netcdf"
+    XR_PARALLEL_DEFAULT = True
 else:
-    XR_PARALLEL = False
+    XR_PARALLEL_DEFAULT = False
     XR_ENGINE = None
     logger.warning(
         "h5netcdf is not installed. Parallel reading of netCDF files will be disabled. "
         "This could have some performance implications."
     )
+
+
+def _is_in_dask_worker_on_linux() -> bool:
+    """Check if we're running in a Dask worker process on Linux.
+    
+    Returns:
+        bool: True if we're in a Dask worker on Linux, False otherwise.
+    """
+    if platform.system() != "Linux":
+        return False
+    
+    try:
+        from dask.distributed import get_worker
+        try:
+            get_worker()
+            return True
+        except ValueError:
+            # Not in a worker process
+            return False
+    except ImportError:
+        # dask.distributed not available
+        return False
+
+
+def _is_dask_using_processes_on_linux() -> bool:
+    """Check if Dask is being used with processes on Linux.
+    
+    Returns:
+        bool: True if Dask is using processes on Linux, False otherwise.
+        
+    Note:
+        This checks if there's an active Dask client using processes.
+        When Dask uses processes, h5netcdf has issues with HDF5 dimension scales.
+    """
+    if platform.system() != "Linux":
+        return False
+    
+    try:
+        from dask.distributed import get_client, get_worker
+        try:
+            get_client()
+            # Check if we're in a worker (which means processes are being used)
+            try:
+                get_worker()
+                return True
+            except ValueError:
+                # Not in a worker, but check if client exists and might use processes
+                # We can't easily detect this from the main process, so we'll be conservative
+                # and assume processes might be used if a client exists
+                # The actual check will happen in workers via _is_in_dask_worker_on_linux
+                return False
+        except ValueError:
+            # No active client
+            return False
+    except ImportError:
+        # dask.distributed not available
+        return False
+
+
+def _get_xr_engine() -> str | None:
+    """Get the appropriate xarray engine to use for opening NetCDF files.
+    
+    Returns:
+        str | None: The engine name to use, or None for default.
+        
+    Note:
+        h5netcdf has issues with HDF5 dimension scales when used in separate
+        Dask worker processes on Linux. This function switches to netcdf4
+        engine when Dask is being used on Linux to avoid the H5DSget_num_scales error.
+    """
+    if XR_ENGINE is None:
+        logger.debug("_get_xr_engine: XR_ENGINE is None, returning None")
+        return None
+    
+    system = platform.system()
+    logger.debug(f"_get_xr_engine: Platform is {system}, XR_ENGINE is {XR_ENGINE}")
+    
+    # On Linux, if we're in a Dask worker or if Dask is being used,
+    # switch to netcdf4 to avoid h5netcdf issues
+    if system == "Linux":
+        try:
+            from dask.distributed import get_client, get_worker
+            # Check if we're in a worker or if a Dask client exists
+            in_worker = False
+            has_client = False
+            try:
+                get_worker()
+                in_worker = True
+                logger.debug("_get_xr_engine: Detected Dask worker on Linux")
+            except ValueError:
+                # Not in a worker, but check if client exists
+                try:
+                    get_client()
+                    has_client = True
+                    logger.debug("_get_xr_engine: Detected Dask client on Linux (not in worker)")
+                except ValueError:
+                    # No Dask client/worker
+                    logger.debug("_get_xr_engine: No Dask client/worker detected, using default engine")
+                    return XR_ENGINE
+            
+            # If we're here, Dask is being used (either in worker or client exists)
+            # Use netcdf4 engine to avoid h5netcdf issues
+            if importlib.util.find_spec("netCDF4") is not None:
+                logger.info(
+                    f"Switching to netcdf4 engine on Linux with Dask "
+                    f"(in_worker={in_worker}, has_client={has_client}) "
+                    f"to avoid h5netcdf HDF5 dimension scale issues."
+                )
+                return "netcdf4"
+            else:
+                # Fall back to None (default engine) if netcdf4 is not available
+                logger.warning(
+                    "netcdf4 not available. Using default engine on Linux with Dask. "
+                    "This may still cause HDF5 dimension scale issues with h5netcdf."
+                )
+                return None
+        except ImportError:
+            # dask.distributed not available
+            logger.debug("_get_xr_engine: dask.distributed not available")
+            pass
+    
+    logger.debug(f"_get_xr_engine: Returning default engine {XR_ENGINE}")
+    return XR_ENGINE
+
+
+def _should_use_parallel_reading() -> bool:
+    """Determine if parallel reading should be used for xarray open_mfdataset.
+    
+    Returns:
+        bool: True if parallel reading should be used, False otherwise.
+        
+    Note:
+        Parallel reading is disabled when Dask is using processes on Linux,
+        as h5netcdf has issues with HDF5 dimension scales in that case.
+        Even if we switch to netcdf4, parallel reading can still cause issues.
+    """
+    if not XR_PARALLEL_DEFAULT:
+        logger.debug("_should_use_parallel_reading: XR_PARALLEL_DEFAULT is False, returning False")
+        return False
+    
+    in_worker = _is_in_dask_worker_on_linux()
+    using_processes = _is_dask_using_processes_on_linux()
+    
+    if in_worker or using_processes:
+        logger.info(
+            f"_should_use_parallel_reading: Disabling parallel reading "
+            f"(in_worker={in_worker}, using_processes={using_processes})"
+        )
+        return False
+    
+    logger.debug(f"_should_use_parallel_reading: Returning {XR_PARALLEL_DEFAULT}")
+    return XR_PARALLEL_DEFAULT
 
 # Parse the MAX_WORKERS environment variable if present
 MAX_WORKERS = os.getenv("MAX_WORKERS")
@@ -189,7 +342,12 @@ class BaseModel(abc.ABC):
             results = self.get_result_year_month(years, months)
 
         files = sum([result.files for result in results], [])
-        params = xr.open_mfdataset(files, engine=XR_ENGINE, parallel=XR_PARALLEL)
+        engine = _get_xr_engine()
+        parallel = _should_use_parallel_reading()
+        logger.info(
+            f"estimate: Opening {len(files)} files with engine={engine}, parallel={parallel}"
+        )
+        params = xr.open_mfdataset(files, engine=engine, parallel=parallel)
 
         if xs is not None:
             params = params.sel(x=xs)
@@ -235,8 +393,15 @@ class BaseModel(abc.ABC):
                 shutil.rmtree(result.path, ignore_errors=True)
                 result.path.mkdir(parents=True, exist_ok=True)
 
+                engine = _get_xr_engine()
+                parallel = _should_use_parallel_reading()
+                logger.info(
+                    f"prepare: Opening {len(result.ref_files)} files with engine={engine}, parallel={parallel}"
+                )
                 with xr.open_mfdataset(
-                    result.ref_files, engine=XR_ENGINE, parallel=XR_PARALLEL
+                    result.ref_files,
+                    engine=engine,
+                    parallel=parallel,
                 ) as ds:
                     prepared_ds = self._prepare_dataset(ds)
                     result.register(prepared_ds)

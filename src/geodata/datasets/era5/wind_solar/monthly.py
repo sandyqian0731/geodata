@@ -1,4 +1,4 @@
-# Copyright 2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
+# Copyright 2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD), Keyu Long (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -23,7 +23,7 @@ from pathlib import Path
 import xarray as xr
 
 from ..._base import AtomicDataset
-from ..hourly.wind_solar import ERA5WindSolarHourlyDataset
+from .hourly import ERA5WindSolarHourlyDataset
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +112,4 @@ class ERA5WindSolarMonthlyDataset(ERA5WindSolarHourlyDataset):
 
                 logger.info("Preprocessing complete with zipfile")
                 logger.info("Successfully downloaded to %s", save_path)
+

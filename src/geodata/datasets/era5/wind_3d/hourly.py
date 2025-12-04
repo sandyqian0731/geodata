@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD)
+# Copyright 2024-2025 Michael Davidson (UCSD), Xiqiang Liu (UCSD), Keyu Long (UCSD)
 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -21,12 +21,12 @@ from pathlib import Path
 import xarray as xr
 
 from ..._base import AtomicDataset
-from .._base import ERA5BaseDataset
+from ._base import ERA5Wind3DBaseDataset
 
 logger = logging.getLogger(__name__)
 
 
-class ERA5Wind3DHourlyDataset(ERA5BaseDataset):
+class ERA5Wind3DHourlyDataset(ERA5Wind3DBaseDataset):
     """ERA5Wind3DHourlyDataset is a class that handles the downloading,
     preprocessing, and storing of the ERA5 dataset for wind information.
     This dataset is stored in hourly intervals.
@@ -114,3 +114,4 @@ class ERA5Wind3DHourlyDataset(ERA5BaseDataset):
                 ds.to_netcdf(save_path)
 
         logger.info("File downloaded: %s", save_path)
+

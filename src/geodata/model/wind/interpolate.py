@@ -51,9 +51,38 @@ def _memoryview_safe(x: np.ndarray) -> np.ndarray:
     return x
 
 
-def _make_interp_coeff(*args, **kwargs):
-    """Dummy function to handle interpolation coefficients."""
-    return sinterp.make_interp_spline(*args, **kwargs).c
+def _make_interp_coeff(x, y, k, t, check_finite=False):
+    """Compute interpolation coefficients for a single block.
+    
+    Args:
+        x: 1D array of x coordinates (must be C-contiguous)
+        y: Data array to interpolate
+        k: Spline degree
+        t: Knot vector
+        check_finite: Whether to check for finite values
+        
+    Returns:
+        Spline coefficients
+    """
+    logger.debug(f"[_make_interp_coeff] Called with x type: {type(x)}, x shape: {np.asarray(x).shape if hasattr(x, 'shape') else 'no shape'}, "
+                 f"x dtype: {np.asarray(x).dtype if hasattr(x, 'dtype') else type(x)}, "
+                 f"y type: {type(y)}, y shape: {np.asarray(y).shape if hasattr(y, 'shape') else 'no shape'}, "
+                 f"k: {k}, t type: {type(t)}, t shape: {np.asarray(t).shape if hasattr(t, 'shape') else 'no shape'}")
+    
+    # Ensure x is C-contiguous and writable
+    x = _memoryview_safe(np.asarray(x, dtype=float))
+    logger.debug(f"[_make_interp_coeff] After _memoryview_safe: x shape: {x.shape}, x dtype: {x.dtype}, x.flags.c_contiguous: {x.flags.c_contiguous}")
+    
+    try:
+        result = sinterp.make_interp_spline(x, y, k=k, t=t, check_finite=check_finite).c
+        logger.debug(f"[_make_interp_coeff] Successfully computed coefficients, shape: {result.shape}")
+        return result
+    except Exception as e:
+        logger.error(f"[_make_interp_coeff] ERROR in make_interp_spline: {type(e).__name__}: {e}")
+        logger.error(f"[_make_interp_coeff] x details: shape={x.shape}, dtype={x.dtype}, c_contiguous={x.flags.c_contiguous}")
+        logger.error(f"[_make_interp_coeff] y details: type={type(y)}, shape={np.asarray(y).shape if hasattr(y, 'shape') else 'N/A'}")
+        logger.error(f"[_make_interp_coeff] t details: type={type(t)}, shape={np.asarray(t).shape if hasattr(t, 'shape') else 'N/A'}")
+        raise
 
 
 def _splrep(a: xr.DataArray, dim: Hashable, k: int = 3) -> xr.Dataset:
@@ -69,45 +98,86 @@ def _splrep(a: xr.DataArray, dim: Hashable, k: int = 3) -> xr.Dataset:
         xr.Dataset: Dataset containing spline parameters.
     """
 
+    logger.debug(f"[_splrep] Starting with dim={dim}, k={k}, a shape: {a.shape}, a dims: {a.dims}")
+    
     # Make sure that dim is on axis 0
     a = a.transpose(dim, ...)
     x: np.ndarray = a.coords[dim].values
+    logger.debug(f"[_splrep] After transpose: a shape: {a.shape}, x shape: {x.shape}, x dtype: {x.dtype}")
 
     if x.dtype.kind == "M":
         # Same treatment will be applied to x_new.
         # Allow x_new.dtype==M8[D] and x.dtype==M8[ns], or vice versa
         x = x.astype("M8[ns]").astype(float)
+        logger.debug(f"[_splrep] Converted datetime x to float, new dtype: {x.dtype}")
+    
+    # Ensure x is C-contiguous and properly typed
+    x = _memoryview_safe(np.asarray(x, dtype=float))
+    logger.debug(f"[_splrep] After _memoryview_safe: x shape: {x.shape}, x dtype: {x.dtype}, x.flags.c_contiguous: {x.flags.c_contiguous}")
 
     t = sinterp._bsplines._not_a_knot(x, k=k)
+    logger.debug(f"[_splrep] Computed knots t, shape: {t.shape}, dtype: {t.dtype}")
 
     if isinstance(a.data, array_type("dask")):
         from dask.array import map_blocks
-        from dask.diagnostics import ProgressBar
+        from dask.diagnostics.progress import ProgressBar
 
-        logger.debug("Computing interpolation coefficients using Dask.")
+        logger.debug(f"[_splrep] Data is dask array, chunks: {a.data.chunks}, shape: {a.data.shape}")
 
         if len(a.data.chunks[0]) > 1:
+            logger.debug(f"[_splrep] Rechunking dimension {dim} to -1 (was: {a.data.chunks[0]})")
             a = a.chunk({dim: -1})
+            logger.debug(f"[_splrep] After rechunking, chunks: {a.data.chunks}")
 
         pbar = ProgressBar()
         if logger.level <= logging.INFO:
             pbar.register()
 
-        c = map_blocks(
-            _make_interp_coeff,
-            x,
-            a.data,
-            k=k,
-            t=t,
-            check_finite=False,
-            dtype=float,
-        )
+        # Create a wrapper function that captures x and t as closures
+        # This ensures they're passed correctly to each block
+        def _block_interp_coeff(y_block, x=x, k=k, t=t, check_finite=False):
+            y_block = np.asarray(y_block)
+            logger.debug(f"[_block_interp_coeff] Called with y_block type: {type(y_block)}, y_block shape: {y_block.shape}, "
+                        f"x type: {type(x)}, x shape: {x.shape if hasattr(x, 'shape') else 'no shape'}, "
+                        f"t type: {type(t)}, t shape: {t.shape if hasattr(t, 'shape') else 'no shape'}")
+            
+            # Handle empty blocks - return empty array with correct shape
+            if y_block.size == 0 or any(s == 0 for s in y_block.shape):
+                logger.debug(f"[_block_interp_coeff] Empty block detected, returning empty array with shape: {y_block.shape}")
+                # Return empty array with same shape as input (coefficients have same shape as input)
+                return np.empty_like(y_block, dtype=float)
+            
+            try:
+                result = _make_interp_coeff(x, y_block, k=k, t=t, check_finite=check_finite)
+                logger.debug(f"[_block_interp_coeff] Successfully computed, result shape: {result.shape}")
+                return result
+            except Exception as e:
+                logger.error(f"[_block_interp_coeff] ERROR: {type(e).__name__}: {e}")
+                raise
+
+        logger.debug(f"[_splrep] Calling map_blocks with a.data shape: {a.data.shape}, chunks: {a.data.chunks}")
+        logger.debug(f"[_splrep] x closure value: shape={x.shape}, dtype={x.dtype}, c_contiguous={x.flags.c_contiguous}")
+        logger.debug(f"[_splrep] t closure value: shape={t.shape}, dtype={t.dtype}")
+        
+        try:
+            c = map_blocks(
+                _block_interp_coeff,
+                a.data,
+                dtype=float,
+                drop_axis=[],
+            )
+            logger.debug(f"[_splrep] map_blocks returned, c type: {type(c)}, c shape: {c.shape if hasattr(c, 'shape') else 'N/A'}")
+        except Exception as e:
+            logger.error(f"[_splrep] ERROR in map_blocks: {type(e).__name__}: {e}")
+            raise
 
         if logger.level <= logging.INFO:
             pbar.unregister()
 
     else:
+        logger.debug(f"[_splrep] Data is numpy array (not dask), shape: {a.data.shape}, dtype: {a.data.dtype}")
         c = _make_interp_coeff(x, a.data, k=k, t=t, check_finite=False)
+        logger.debug(f"[_splrep] Computed coefficients (numpy), shape: {c.shape}")
 
     return xr.Dataset(
         data_vars={
@@ -188,8 +258,12 @@ class WindInterpolationModel(WindBaseModel):
 
         logger.debug("Shape of heights: %s", ds["height"].shape)
         speeds = (ds["u"] ** 2 + ds["v"] ** 2) ** 0.5
+        logger.debug(f"[_prepare_dataset] Computed speeds, shape: {speeds.shape}, dims: {speeds.dims}, "
+                    f"is dask: {isinstance(speeds.data, array_type('dask'))}")
 
+        logger.info(f"[_prepare_dataset] Calling _splrep with speeds shape: {speeds.shape}")
         params = _splrep(speeds, "height")
+        logger.info(f"[_prepare_dataset] _splrep returned params, type: {type(params)}, data_vars: {list(params.data_vars.keys())}")
         if half_precision:
             params = params.astype(np.float32)
 
