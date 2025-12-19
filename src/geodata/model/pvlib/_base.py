@@ -468,8 +468,8 @@ class Pvlib(BaseModel):
 
         relative_humidity = calculate_relative_humidity(
             temperature_celsius,
-            #_convert_celsius(ds.dewpoint_temperature),
-            convert_kelvin_to_celsius(ds.d2m),
+            convert_kelvin_to_celsius(ds.dewpoint_temperature),
+            # convert_kelvin_to_celsius(ds.d2m),
         )
 
         precipitable_water = calculate_precipitable_water(
