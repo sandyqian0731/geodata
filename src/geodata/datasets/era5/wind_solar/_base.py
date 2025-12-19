@@ -119,6 +119,7 @@ class ERA5WindSolarBaseDataset(ERA5BaseDataset):
                 "sp": "pressure",
                 "stl4": "soil temperature",
                 "fsr": "roughness",
+                "d2m": "dewpoint_temperature"
             }
         )
 
