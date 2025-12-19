@@ -563,3 +563,7 @@ class Pvlib(BaseModel):
         weather_data_final = pd.concat(coord_subsets)
 
         return xr.Dataset.from_dataframe(weather_data_final)
+    
+    def _prepare_dataset(self, source: xr.Dataset) -> xr.Dataset:
+        """This will never be called, but must be implemented (abstract method)."""
+        raise NotImplementedError("This model does not use _prepare_dataset")
