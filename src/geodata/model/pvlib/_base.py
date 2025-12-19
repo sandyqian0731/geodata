@@ -385,13 +385,7 @@ class Pvlib(BaseModel):
                     dataset_cls = type(self.source)
                     if hasattr(dataset_cls, 'transform_wind_solar_dataset'):
                         # Call the classmethod to transform the dataset
-                        transform_start = time.time()
                         params = dataset_cls.transform_wind_solar_dataset(params)  # type: ignore[attr-defined]
-                        transform_time = time.time() - transform_start
-                        logger.info(
-                            f"transform_wind_solar_dataset for {result.year:04d}-{result.month:02d}: "
-                            f"{transform_time:.2f}s"
-                        )
                     else:
                         logger.warning(
                             "Dataset does not have transform_wind_solar_dataset method. "
@@ -399,13 +393,7 @@ class Pvlib(BaseModel):
                         )
                     
                     # Process this month's data
-                    estimate_start = time.time()
                     monthly_output = self._estimate_dataset(params, **kwargs)
-                    estimate_time = time.time() - estimate_start
-                    logger.info(
-                        f"_estimate_dataset for {result.year:04d}-{result.month:02d}: "
-                        f"{estimate_time:.2f}s"
-                    )
                     
                     # Store the result (will concatenate later)
                     monthly_results.append(monthly_output)
@@ -432,6 +420,17 @@ class Pvlib(BaseModel):
         This function extracts specified variables from the `cutout` dataset, calculates additional parameters 
         like global horizontal irradiance (GHI), precipitable water, and solar position, and renames fields to 
         align with expected inputs.
+        
+        PARALLELIZATION OPTIONS:
+        ------------------------
+        This function processes the entire dataset at once using vectorized operations (xarray/numpy).
+        Most operations are already parallelized at the numpy level (BLAS/MKL).
+        
+        Potential optimizations:
+        1. If dataset is very large, consider chunking by coordinates and processing in parallel
+        2. The solar position calculation (calculate_pvlib_solarposition) could be parallelized
+           across time steps if it's not already vectorized
+        3. Consider using dask arrays for lazy evaluation if memory is a concern
 
         Requires a cutout with the following variables:
 
@@ -464,7 +463,8 @@ class Pvlib(BaseModel):
             Dataset containing necessary variables to run `pvlib` model simulations.
 
         """
-
+        prepare_start = time.time()
+        
         if varnames:
             # Check which variables are actually available
             available_vars = [v for v in varnames if v in ds.data_vars]
@@ -508,7 +508,7 @@ class Pvlib(BaseModel):
             })
         )
 
-        return ds[[
+        result = ds[[
             "dhi", 
             "dni",
             "ghi", 
@@ -516,13 +516,19 @@ class Pvlib(BaseModel):
             "wind_speed", 
             "precipitable_water"
         ]]
+        
+        prepare_time = time.time() - prepare_start
+        logger.info(f"_prepare_pvlib_ds: {prepare_time:.2f}s")
+        
+        return result
     
     def _pvlib_model(
         self,
         ds: xr.Dataset, 
         system: pvsystem.PVSystem,
         model_chain_config: ModelChainConfig,
-        vars: list[str] = ["influx_diffuse", "influx_direct", "dewpoint_temperature", "temperature", "wnd100m"]
+        vars: list[str] = ["influx_diffuse", "influx_direct", "dewpoint_temperature", "temperature", "wnd100m"],
+        n_jobs: int | None = None
     ) -> xr.Dataset:
         
         """
@@ -530,6 +536,49 @@ class Pvlib(BaseModel):
         represented in a `geodata` cutout. This function prepares input weather data, initializes the 
         `pvlib` model, and runs simulations for each set of coordinates, outputting an xarray dataset 
         containing all simulation results.
+        
+        PARALLELIZATION OPTIONS:
+        ------------------------
+        This function processes coordinates sequentially, which is the main bottleneck.
+        Recommended parallelization approaches:
+        
+        Option 1: multiprocessing.Pool (Recommended for CPU-bound tasks)
+        ----------------------------------------
+        - Use multiprocessing.Pool to process coordinates in parallel
+        - Each worker processes a subset of coordinates independently
+        - Pros: True parallelism, good for CPU-bound pvlib calculations
+        - Cons: Requires pickling system/model_chain_config objects, higher memory usage
+        
+        Option 2: concurrent.futures.ThreadPoolExecutor
+        ------------------------------------------------
+        - Use threads for I/O-bound operations (if any)
+        - Less overhead than multiprocessing
+        - Pros: Lower memory overhead, faster startup
+        - Cons: Limited by GIL for CPU-bound tasks (pvlib is CPU-bound, so not ideal)
+        
+        Option 3: concurrent.futures.ProcessPoolExecutor
+        ------------------------------------------------
+        - Similar to multiprocessing.Pool but with a simpler API
+        - Pros: Cleaner API, better error handling
+        - Cons: Similar to Option 1
+        
+        Option 4: joblib.Parallel
+        --------------------------
+        - High-level parallel processing library
+        - Pros: Simple API, good progress reporting, handles pickling well
+        - Cons: Additional dependency
+        
+        Option 5: Dask (for distributed computing)
+        -------------------------------------------
+        - For very large datasets across multiple machines
+        - Pros: Scales to clusters, handles memory efficiently
+        - Cons: More complex setup, overhead for small datasets
+        
+        Implementation suggestion:
+        - Create a helper function: _process_single_coordinate(y, x, weather_data, system, model_chain_config, ptc, n_mods)
+        - Use multiprocessing.Pool.map() or ProcessPoolExecutor.map() to parallelize
+        - Consider chunking coordinates into batches to balance load
+        - Use n_jobs parameter to control parallelism (default: os.cpu_count())
 
         Requires a cutout with the following variables:
 
@@ -572,7 +621,7 @@ class Pvlib(BaseModel):
         coord_subsets = []
         
         # Log progress every 10% or at least every 10 coordinates, whichever is more frequent
-        log_interval = max(1, min(10, total_coords // 10))
+        log_interval = max(1, min(100, total_coords // 100))
         
         coord_start_time = time.time()
         for idx, (y, x) in enumerate(unique_coords, 1):

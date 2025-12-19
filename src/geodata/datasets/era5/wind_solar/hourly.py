@@ -124,7 +124,7 @@ class ERA5WindSolarHourlyDataset(ERA5WindSolarBaseDataset):
                         os.path.join(tempdir, f)
                         for f in os.listdir(tempdir)
                         if f.endswith(".nc")
-                    ]
+                    ], engine="h5netcdf"
                 ) as ds:
                     ds.to_netcdf(save_path)
 
