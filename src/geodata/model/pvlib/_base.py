@@ -356,6 +356,22 @@ class Pvlib(BaseModel):
                     engine=engine,
                     parallel=parallel,
                 ) as params:
+                    # Rename coordinates to x/y if they use longitude/latitude naming
+                    # This must happen before spatial filtering
+                    # Check dimensions first (for .sel() to work), then coordinates
+                    rename_dict = {}
+                    if "longitude" in params.dims:
+                        rename_dict["longitude"] = "x"
+                    elif "lon" in params.dims:
+                        rename_dict["lon"] = "x"
+                    if "latitude" in params.dims:
+                        rename_dict["latitude"] = "y"
+                    elif "lat" in params.dims:
+                        rename_dict["lat"] = "y"
+                    
+                    if rename_dict:
+                        params = params.rename(rename_dict)
+                    
                     # Apply spatial filtering if specified
                     if xs is not None:
                         params = params.sel(x=xs)
