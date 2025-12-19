@@ -30,7 +30,7 @@ from pvlib.location import Location
 from pvlib.modelchain import ModelChain
 from timezonefinder import TimezoneFinder
 
-from .._base import BaseModel, _get_xr_engine, _should_use_parallel_reading
+from .._base import BaseModel, _should_use_parallel_reading
 from geodata.logging import logger
 from .calculations import calculate_pvlib_solarposition, calculate_ghi, calculate_relative_humidity, calculate_precipitable_water, convert_kelvin_to_celsius
 from tqdm.auto import tqdm
@@ -330,7 +330,7 @@ class Pvlib(BaseModel):
                 f"Processing {len(results)} month(s) month-by-month to manage memory usage"
             )
             
-            engine = _get_xr_engine()
+            engine = "h5netcdf"
             parallel = _should_use_parallel_reading()
             
             monthly_results = []
