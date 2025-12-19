@@ -25,6 +25,7 @@ TODO: Documentation here
 """
 import pandas as pd
 import xarray as xr
+import time
 from pvlib import pvsystem
 from pvlib.location import Location
 from pvlib.modelchain import ModelChain
@@ -384,7 +385,13 @@ class Pvlib(BaseModel):
                     dataset_cls = type(self.source)
                     if hasattr(dataset_cls, 'transform_wind_solar_dataset'):
                         # Call the classmethod to transform the dataset
+                        transform_start = time.time()
                         params = dataset_cls.transform_wind_solar_dataset(params)  # type: ignore[attr-defined]
+                        transform_time = time.time() - transform_start
+                        logger.info(
+                            f"transform_wind_solar_dataset for {result.year:04d}-{result.month:02d}: "
+                            f"{transform_time:.2f}s"
+                        )
                     else:
                         logger.warning(
                             "Dataset does not have transform_wind_solar_dataset method. "
@@ -392,7 +399,13 @@ class Pvlib(BaseModel):
                         )
                     
                     # Process this month's data
+                    estimate_start = time.time()
                     monthly_output = self._estimate_dataset(params, **kwargs)
+                    estimate_time = time.time() - estimate_start
+                    logger.info(
+                        f"_estimate_dataset for {result.year:04d}-{result.month:02d}: "
+                        f"{estimate_time:.2f}s"
+                    )
                     
                     # Store the result (will concatenate later)
                     monthly_results.append(monthly_output)
@@ -555,8 +568,15 @@ class Pvlib(BaseModel):
 
         weather_data = self._prepare_pvlib_ds(ds, *vars).to_dataframe()
         unique_coords = weather_data.index.droplevel('time').drop_duplicates()
+        total_coords = len(unique_coords)
         coord_subsets = []
-        for y, x in unique_coords:
+        
+        # Log progress every 10% or at least every 10 coordinates, whichever is more frequent
+        log_interval = max(1, min(10, total_coords // 10))
+        
+        coord_start_time = time.time()
+        for idx, (y, x) in enumerate(unique_coords, 1):
+            coord_step_start = time.time()
             subset = weather_data.loc[(slice(None), y, x), :].reset_index(['x', 'y'])
             tz_str = TimezoneFinder().timezone_at(lat=y, lng=x)
             if tz_str is None:
@@ -575,6 +595,20 @@ class Pvlib(BaseModel):
             subset['pv'] = subset['ac'] / (ptc * n_mods)
 
             coord_subsets.append(subset)
+            
+            coord_step_time = time.time() - coord_step_start
+            # Log progress periodically
+            if idx % log_interval == 0 or idx == total_coords:
+                elapsed_total = time.time() - coord_start_time
+                avg_time_per_coord = elapsed_total / idx
+                remaining_coords = total_coords - idx
+                eta = avg_time_per_coord * remaining_coords
+                logger.debug(
+                    f"Processed coordinate {idx}/{total_coords} ({y:.2f}, {x:.2f}): "
+                    f"{coord_step_time:.2f}s | "
+                    f"Avg: {avg_time_per_coord:.2f}s/coord | "
+                    f"ETA: {eta:.1f}s"
+                )
 
         weather_data_final = pd.concat(coord_subsets)
 
