@@ -126,7 +126,7 @@ class ERA5WindSolarHourlyDataset(ERA5WindSolarBaseDataset):
                         if f.endswith(".nc")
                     ], engine="h5netcdf"
                 ) as ds:
-                    ds.to_netcdf(save_path)
+                    ds.to_netcdf(save_path, engine="h5netcdf")
 
                 logger.info("Preprocessing complete with zipfile")
                 logger.info("Successfully downloaded to %s", save_path)
