@@ -23,9 +23,13 @@ Geospatial Data Collection and "Pre-Analysis" Tools
 TODO: Documentation here
 
 """
+import multiprocessing
+import os
+import platform
 import pandas as pd
 import xarray as xr
 import time
+from multiprocessing import Pool, Manager, cpu_count as mp_cpu_count
 from pvlib import pvsystem
 from pvlib.location import Location
 from pvlib.modelchain import ModelChain
@@ -118,7 +122,284 @@ class ModelChainConfig:
 
     def model_chain_to_kwargs(self):
         return self.__dict__
+
+
+def _detect_available_cpus() -> int:
+    """
+    Detect the number of available CPUs using multiple methods.
     
+    Tries multiple detection methods in order:
+    1. SLURM environment variables (if in SLURM job) - authoritative for HPC clusters
+    2. psutil (if available) - most reliable, respects CPU affinity
+    3. Linux cgroups v2 (if available) - respects container limits
+    4. Linux cgroups v1 (if available) - respects container limits
+    5. multiprocessing.cpu_count() - standard library fallback
+    6. os.cpu_count() - last resort
+    7. Defaults to 1 if all methods fail
+    
+    Returns:
+        int: Number of available CPUs (at least 1)
+    """
+    detected_cpus = None
+    method_used = None
+    
+    # Method 1: Try SLURM environment variables (for HPC clusters)
+    # SLURM is authoritative when present, so check this first
+    try:
+        # Check if we're in a SLURM job
+        if os.getenv("SLURM_JOB_ID") is not None:
+            # Try SLURM_CPUS_PER_TASK first (most common and reliable)
+            slurm_cpus_per_task = os.getenv("SLURM_CPUS_PER_TASK")
+            if slurm_cpus_per_task is not None:
+                try:
+                    detected_cpus = int(slurm_cpus_per_task)
+                    if detected_cpus > 0:
+                        method_used = "SLURM_CPUS_PER_TASK"
+                        logger.debug(
+                            f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
+                            f"using SLURM_CPUS_PER_TASK={slurm_cpus_per_task}"
+                        )
+                except (ValueError, TypeError):
+                    logger.debug(
+                        f"_detect_available_cpus: SLURM_CPUS_PER_TASK={slurm_cpus_per_task} "
+                        f"is not a valid integer, trying other SLURM variables"
+                    )
+            
+            # If SLURM_CPUS_PER_TASK not available, try SLURM_JOB_CPUS_PER_NODE
+            if detected_cpus is None:
+                slurm_job_cpus = os.getenv("SLURM_JOB_CPUS_PER_NODE")
+                if slurm_job_cpus is not None:
+                    try:
+                        # SLURM_JOB_CPUS_PER_NODE can be a comma-separated list for multi-node jobs
+                        # Take the first value (current node)
+                        cpus_str = slurm_job_cpus.split(',')[0]
+                        detected_cpus = int(cpus_str)
+                        if detected_cpus > 0:
+                            method_used = "SLURM_JOB_CPUS_PER_NODE"
+                            logger.debug(
+                                f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
+                                f"using SLURM_JOB_CPUS_PER_NODE={slurm_job_cpus} "
+                                f"(using first node value)"
+                            )
+                    except (ValueError, TypeError, IndexError):
+                        logger.debug(
+                            f"_detect_available_cpus: SLURM_JOB_CPUS_PER_NODE={slurm_job_cpus} "
+                            f"could not be parsed, trying other methods"
+                        )
+            
+            # If still not found, try SLURM_CPUS_ON_NODE (but this is less reliable)
+            # as it shows CPUs on node, not necessarily allocated to job
+            if detected_cpus is None:
+                slurm_cpus_on_node = os.getenv("SLURM_CPUS_ON_NODE")
+                if slurm_cpus_on_node is not None:
+                    try:
+                        # Can be a comma-separated list for multi-node jobs
+                        cpus_str = slurm_cpus_on_node.split(',')[0]
+                        detected_cpus = int(cpus_str)
+                        if detected_cpus > 0:
+                            method_used = "SLURM_CPUS_ON_NODE"
+                            logger.debug(
+                                f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
+                                f"using SLURM_CPUS_ON_NODE={slurm_cpus_on_node} "
+                                f"(using first node value). Note: This may not reflect "
+                                f"actual CPU allocation to the job."
+                            )
+                    except (ValueError, TypeError, IndexError):
+                        logger.debug(
+                            f"_detect_available_cpus: SLURM_CPUS_ON_NODE={slurm_cpus_on_node} "
+                            f"could not be parsed, trying other methods"
+                        )
+            
+            if detected_cpus is None:
+                logger.debug(
+                    "_detect_available_cpus: Running in SLURM job (SLURM_JOB_ID present) "
+                    "but no usable CPU count variables found. Trying other detection methods."
+                )
+    except Exception as e:
+        logger.debug(f"_detect_available_cpus: SLURM detection failed: {e}, trying other methods")
+    
+    # Method 2: Try psutil (most reliable, respects CPU affinity and cgroups)
+    try:
+        import psutil
+        detected_cpus = psutil.cpu_count(logical=False)  # Physical cores first
+        if detected_cpus is None or detected_cpus == 0:
+            detected_cpus = psutil.cpu_count(logical=True)  # Fallback to logical cores
+        if detected_cpus is not None and detected_cpus > 0:
+            method_used = "psutil"
+            logger.debug(f"_detect_available_cpus: Detected {detected_cpus} CPU(s) using psutil")
+    except ImportError:
+        logger.debug("_detect_available_cpus: psutil not available, trying other methods")
+    except Exception as e:
+        logger.debug(f"_detect_available_cpus: psutil failed: {e}, trying other methods")
+    
+    # Method 3: Try Linux cgroups v2 (for containers)
+    if detected_cpus is None and platform.system() == "Linux":
+        try:
+            # Check cgroup v2 cpu.max (format: "max" or "quota period")
+            cgroup_path = "/sys/fs/cgroup/cpu.max"
+            if os.path.exists(cgroup_path):
+                with open(cgroup_path, 'r') as f:
+                    content = f.read().strip()
+                    if content != "max":
+                        parts = content.split()
+                        if len(parts) == 2:
+                            quota = int(parts[0])
+                            period = int(parts[1])
+                            if quota > 0 and period > 0:
+                                detected_cpus = max(1, int(quota / period))
+                                method_used = "cgroups_v2"
+                                logger.debug(
+                                    f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
+                                    f"using cgroups v2 (quota={quota}, period={period})"
+                                )
+        except Exception as e:
+            logger.debug(f"_detect_available_cpus: cgroups v2 check failed: {e}")
+        
+        # Method 4: Try Linux cgroups v1 (for containers)
+        if detected_cpus is None:
+            try:
+                # Check cgroup v1 cpu.cfs_quota_us and cpu.cfs_period_us
+                quota_path = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+                period_path = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
+                if os.path.exists(quota_path) and os.path.exists(period_path):
+                    with open(quota_path, 'r') as f:
+                        quota = int(f.read().strip())
+                    with open(period_path, 'r') as f:
+                        period = int(f.read().strip())
+                    if quota > 0 and period > 0:
+                        detected_cpus = max(1, int(quota / period))
+                        method_used = "cgroups_v1"
+                        logger.debug(
+                            f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
+                            f"using cgroups v1 (quota={quota}, period={period})"
+                        )
+            except Exception as e:
+                logger.debug(f"_detect_available_cpus: cgroups v1 check failed: {e}")
+    
+    # Method 5: Try multiprocessing.cpu_count()
+    if detected_cpus is None:
+        try:
+            detected_cpus = mp_cpu_count()
+            if detected_cpus is not None and detected_cpus > 0:
+                method_used = "multiprocessing.cpu_count()"
+                logger.debug(
+                    f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
+                    f"using multiprocessing.cpu_count()"
+                )
+        except Exception as e:
+            logger.debug(f"_detect_available_cpus: multiprocessing.cpu_count() failed: {e}")
+    
+    # Method 6: Try os.cpu_count() as last resort
+    if detected_cpus is None:
+        try:
+            detected_cpus = os.cpu_count()
+            if detected_cpus is not None and detected_cpus > 0:
+                method_used = "os.cpu_count()"
+                logger.debug(
+                    f"_detect_available_cpus: Detected {detected_cpus} CPU(s) using os.cpu_count()"
+                )
+        except Exception as e:
+            logger.debug(f"_detect_available_cpus: os.cpu_count() failed: {e}")
+    
+    # Final fallback: default to 1
+    if detected_cpus is None or detected_cpus <= 0:
+        detected_cpus = 1
+        method_used = "default_fallback"
+        logger.debug(
+            "_detect_available_cpus: All detection methods failed. "
+            "Defaulting to 1 CPU and logging debug message."
+        )
+        logger.debug(
+            "_detect_available_cpus: This may indicate the program is running in a restricted "
+            "environment (container, cgroup limits, or CPU affinity restrictions)."
+        )
+    else:
+        logger.debug(
+            f"_detect_available_cpus: Successfully detected {detected_cpus} CPU(s) "
+            f"using method: {method_used}"
+        )
+    
+    return detected_cpus
+
+
+def _process_single_coordinate(args):
+    """
+    Helper function to process a single coordinate for multiprocessing.
+    
+    This function must be at module level to be picklable for multiprocessing.
+    
+    Args:
+        args: Tuple containing:
+            - coord: Tuple of (y, x) coordinates
+            - weather_data: DataFrame with weather data
+            - system: PVSystem object
+            - model_chain_kwargs: Dictionary of ModelChain configuration
+            - ptc: Module PTC value
+            - n_mods: Number of modules per string
+            - progress_dict: Shared dictionary for progress tracking (optional)
+            - coord_index: Index of this coordinate in the total list
+            - total_coords: Total number of coordinates to process
+    
+    Returns:
+        Tuple of (coord, subset_df) where subset_df contains the processed data
+    """
+    (y, x), weather_data, system, model_chain_kwargs, ptc, n_mods, progress_dict, coord_index, total_coords = args
+    
+    try:
+        # Extract subset for this coordinate
+        subset = weather_data.loc[(slice(None), y, x), :].reset_index(['x', 'y'])
+        
+        # Get timezone
+        tz_str = TimezoneFinder().timezone_at(lat=y, lng=x)
+        if tz_str is None:
+            raise ValueError(f"Timezone not found for coordinates ({y}, {x})")
+        
+        # Create location
+        location = Location(latitude=y, longitude=x, tz=tz_str)  # type: ignore[arg-type]
+        
+        # Create and run ModelChain
+        mc = ModelChain(
+            system,
+            location,
+            **model_chain_kwargs
+        )
+        mc.run_model(subset)
+        
+        # Calculate outputs
+        subset['ac'] = mc.results.ac
+        subset.loc[subset['ac'] < 0, 'ac'] = 0
+        subset['pv'] = subset['ac'] / (ptc * n_mods)
+        
+        # Update progress if progress_dict is provided
+        if progress_dict is not None:
+            with progress_dict['lock']:
+                progress_dict['completed'] += 1
+                completed = progress_dict['completed']
+                elapsed = time.time() - progress_dict['start_time']
+                
+                # Log progress periodically
+                log_interval = max(1, min(100, total_coords // 10))
+                if completed % log_interval == 0 or completed == total_coords:
+                    avg_time_per_coord = elapsed / completed if completed > 0 else 0
+                    remaining_coords = total_coords - completed
+                    eta = avg_time_per_coord * remaining_coords
+                    progress_dict['last_log'] = {
+                        'completed': completed,
+                        'total': total_coords,
+                        'coord': (y, x),
+                        'elapsed': elapsed,
+                        'avg_time': avg_time_per_coord,
+                        'eta': eta
+                    }
+                    progress_dict['should_log'] = True
+        
+        return (y, x), subset
+        
+    except Exception as e:
+        logger.error(f"Error processing coordinate ({y}, {x}): {str(e)}")
+        raise
+
+
 class Pvlib(BaseModel):
     """The pvlib model"""
 
@@ -618,47 +899,130 @@ class Pvlib(BaseModel):
         weather_data = self._prepare_pvlib_ds(ds, *vars).to_dataframe()
         unique_coords = weather_data.index.droplevel('time').drop_duplicates()
         total_coords = len(unique_coords)
-        coord_subsets = []
         
-        # Log progress every 10% or at least every 10 coordinates, whichever is more frequent
-        log_interval = max(1, min(100, total_coords // 100))
+        # Determine number of workers using robust CPU detection
+        if n_jobs is None:
+            n_jobs = _detect_available_cpus()
+            logger.debug(
+                f"_pvlib_model: Auto-detected {n_jobs} available CPU(s) for parallel processing"
+            )
+        else:
+            logger.debug(
+                f"_pvlib_model: Using user-specified n_jobs={n_jobs} for parallel processing"
+            )
+        
+        # Ensure n_jobs is valid: at least 1, and not more than total coordinates
+        n_jobs = max(1, min(n_jobs, total_coords))
+        
+        if n_jobs == 1:
+            logger.debug(
+                f"_pvlib_model: Using sequential processing (n_jobs=1). "
+                f"This may be due to: only 1 coordinate, CPU detection returned 1, "
+                f"or user specified n_jobs=1"
+            )
+        
+        logger.info(
+            f"Processing {total_coords} coordinate(s) using {n_jobs} worker process(es)"
+        )
+        
+        # Prepare arguments for parallel processing
+        model_chain_kwargs = model_chain_config.model_chain_to_kwargs()
+        
+        # Create shared progress tracking dictionary
+        manager = Manager()
+        progress_dict = manager.dict()
+        progress_dict['completed'] = 0
+        progress_dict['start_time'] = time.time()
+        progress_dict['should_log'] = False
+        progress_dict['last_log'] = None
+        progress_dict['lock'] = manager.Lock()
+        
+        # Prepare arguments for each coordinate
+        process_args = [
+            (
+                (y, x),
+                weather_data,
+                system,
+                model_chain_kwargs,
+                ptc,
+                n_mods,
+                progress_dict,
+                idx,
+                total_coords
+            )
+            for idx, (y, x) in enumerate(unique_coords, 1)
+        ]
         
         coord_start_time = time.time()
-        for idx, (y, x) in enumerate(unique_coords, 1):
-            coord_step_start = time.time()
-            subset = weather_data.loc[(slice(None), y, x), :].reset_index(['x', 'y'])
-            tz_str = TimezoneFinder().timezone_at(lat=y, lng=x)
-            if tz_str is None:
-                raise ValueError(f"Timezone not found for coordinates ({y}, {x})")
-            location = Location(latitude=y, longitude=x, tz = tz_str) # type: ignore[arg-type]
+        coord_subsets = []
+        
+        # Process coordinates in parallel
+        if n_jobs == 1:
+            # Sequential processing (useful for debugging or when only 1 coordinate)
+            logger.debug("Using sequential processing (n_jobs=1)")
+            for args in process_args:
+                (y, x), subset = _process_single_coordinate(args)
+                coord_subsets.append(subset)
+                
+                # Log progress
+                idx = args[7]  # coord_index
+                if idx % max(1, min(100, total_coords // 10)) == 0 or idx == total_coords:
+                    elapsed_total = time.time() - coord_start_time
+                    avg_time_per_coord = elapsed_total / idx
+                    remaining_coords = total_coords - idx
+                    eta = avg_time_per_coord * remaining_coords
+                    logger.debug(
+                        f"Processed coordinate {idx}/{total_coords} ({y:.2f}, {x:.2f}): "
+                        f"Avg: {avg_time_per_coord:.2f}s/coord | "
+                        f"ETA: {eta:.1f}s"
+                    )
+        else:
+            # Parallel processing with progress tracking
+            logger.debug(f"Using parallel processing with {n_jobs} workers")
             
-            mc = ModelChain(
-                system, 
-                location, 
-                **model_chain_config.model_chain_to_kwargs()
-            )
-            mc.run_model(subset)
+            # Start a thread to monitor progress
+            import threading
+            stop_progress_thread = threading.Event()
             
-            subset['ac'] = mc.results.ac
-            subset.loc[subset['ac'] < 0, 'ac'] = 0
-            subset['pv'] = subset['ac'] / (ptc * n_mods)
-
-            coord_subsets.append(subset)
+            def progress_monitor():
+                """Monitor progress and log updates"""
+                last_logged = 0
+                while not stop_progress_thread.is_set():
+                    time.sleep(0.5)  # Check every 0.5 seconds
+                    if progress_dict.get('should_log', False):
+                        with progress_dict['lock']:
+                            if progress_dict.get('should_log', False):
+                                log_info = progress_dict.get('last_log')
+                                if log_info and log_info['completed'] > last_logged:
+                                    logger.debug(
+                                        f"Processed coordinate {log_info['completed']}/{log_info['total']} "
+                                        f"({log_info['coord'][0]:.2f}, {log_info['coord'][1]:.2f}): "
+                                        f"Avg: {log_info['avg_time']:.2f}s/coord | "
+                                        f"ETA: {log_info['eta']:.1f}s"
+                                    )
+                                    last_logged = log_info['completed']
+                                progress_dict['should_log'] = False
             
-            coord_step_time = time.time() - coord_step_start
-            # Log progress periodically
-            if idx % log_interval == 0 or idx == total_coords:
-                elapsed_total = time.time() - coord_start_time
-                avg_time_per_coord = elapsed_total / idx
-                remaining_coords = total_coords - idx
-                eta = avg_time_per_coord * remaining_coords
-                logger.debug(
-                    f"Processed coordinate {idx}/{total_coords} ({y:.2f}, {x:.2f}): "
-                    f"{coord_step_time:.2f}s | "
-                    f"Avg: {avg_time_per_coord:.2f}s/coord | "
-                    f"ETA: {eta:.1f}s"
-                )
-
+            progress_thread = threading.Thread(target=progress_monitor, daemon=True)
+            progress_thread.start()
+            
+            try:
+                with Pool(processes=n_jobs) as pool:
+                    results = pool.map(_process_single_coordinate, process_args)
+                
+                # Extract subsets from results
+                coord_subsets = [subset for (y, x), subset in results]
+                
+            finally:
+                stop_progress_thread.set()
+                progress_thread.join(timeout=1.0)
+        
+        elapsed_total = time.time() - coord_start_time
+        logger.info(
+            f"Completed processing {total_coords} coordinate(s) in {elapsed_total:.2f}s "
+            f"({elapsed_total/total_coords:.2f}s per coordinate on average)"
+        )
+        
         weather_data_final = pd.concat(coord_subsets)
 
         return xr.Dataset.from_dataframe(weather_data_final)
