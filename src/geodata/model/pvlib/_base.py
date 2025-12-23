@@ -159,6 +159,12 @@ def _detect_available_cpus() -> int:
                             f"_detect_available_cpus: Detected {detected_cpus} CPU(s) "
                             f"using SLURM_CPUS_PER_TASK={slurm_cpus_per_task}"
                         )
+                        # SLURM is authoritative - return immediately
+                        logger.debug(
+                            f"_detect_available_cpus: Successfully detected {detected_cpus} CPU(s) "
+                            f"using method: {method_used}"
+                        )
+                        return detected_cpus
                 except (ValueError, TypeError):
                     logger.debug(
                         f"_detect_available_cpus: SLURM_CPUS_PER_TASK={slurm_cpus_per_task} "
@@ -181,6 +187,12 @@ def _detect_available_cpus() -> int:
                                 f"using SLURM_JOB_CPUS_PER_NODE={slurm_job_cpus} "
                                 f"(using first node value)"
                             )
+                            # SLURM is authoritative - return immediately
+                            logger.debug(
+                                f"_detect_available_cpus: Successfully detected {detected_cpus} CPU(s) "
+                                f"using method: {method_used}"
+                            )
+                            return detected_cpus
                     except (ValueError, TypeError, IndexError):
                         logger.debug(
                             f"_detect_available_cpus: SLURM_JOB_CPUS_PER_NODE={slurm_job_cpus} "
@@ -204,6 +216,12 @@ def _detect_available_cpus() -> int:
                                 f"(using first node value). Note: This may not reflect "
                                 f"actual CPU allocation to the job."
                             )
+                            # SLURM is authoritative - return immediately
+                            logger.debug(
+                                f"_detect_available_cpus: Successfully detected {detected_cpus} CPU(s) "
+                                f"using method: {method_used}"
+                            )
+                            return detected_cpus
                     except (ValueError, TypeError, IndexError):
                         logger.debug(
                             f"_detect_available_cpus: SLURM_CPUS_ON_NODE={slurm_cpus_on_node} "
@@ -219,18 +237,19 @@ def _detect_available_cpus() -> int:
         logger.debug(f"_detect_available_cpus: SLURM detection failed: {e}, trying other methods")
     
     # Method 2: Try psutil (most reliable, respects CPU affinity and cgroups)
-    try:
-        import psutil
-        detected_cpus = psutil.cpu_count(logical=False)  # Physical cores first
-        if detected_cpus is None or detected_cpus == 0:
-            detected_cpus = psutil.cpu_count(logical=True)  # Fallback to logical cores
-        if detected_cpus is not None and detected_cpus > 0:
-            method_used = "psutil"
-            logger.debug(f"_detect_available_cpus: Detected {detected_cpus} CPU(s) using psutil")
-    except ImportError:
-        logger.debug("_detect_available_cpus: psutil not available, trying other methods")
-    except Exception as e:
-        logger.debug(f"_detect_available_cpus: psutil failed: {e}, trying other methods")
+    if detected_cpus is None:
+        try:
+            import psutil
+            detected_cpus = psutil.cpu_count(logical=False)  # Physical cores first
+            if detected_cpus is None or detected_cpus == 0:
+                detected_cpus = psutil.cpu_count(logical=True)  # Fallback to logical cores
+            if detected_cpus is not None and detected_cpus > 0:
+                method_used = "psutil"
+                logger.debug(f"_detect_available_cpus: Detected {detected_cpus} CPU(s) using psutil")
+        except ImportError:
+            logger.debug("_detect_available_cpus: psutil not available, trying other methods")
+        except Exception as e:
+            logger.debug(f"_detect_available_cpus: psutil failed: {e}, trying other methods")
     
     # Method 3: Try Linux cgroups v2 (for containers)
     if detected_cpus is None and platform.system() == "Linux":
