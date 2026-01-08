@@ -101,7 +101,7 @@ def test_wind_solar_workflow():
     assert model.config is not None, "model config should be successfully created"
 
     # Test capacity factor estimation globally
-    ac_power_and_pv_capacity_global = model.estimate(years=years, months=months)
+    ac_power_and_pv_capacity_global = model.estimate(years=years, months=months, xs=xs, ys=ys)
     assert ac_power_and_pv_capacity_global is not None, "Capacity factor estimation should return a result"
     assert isinstance(ac_power_and_pv_capacity_global, (xr.DataArray, xr.Dataset)), \
         "Capacity factor should be an xarray DataArray or Dataset"

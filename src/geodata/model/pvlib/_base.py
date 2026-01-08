@@ -23,7 +23,6 @@ Geospatial Data Collection and "Pre-Analysis" Tools
 TODO: Documentation here
 
 """
-import multiprocessing
 import os
 import platform
 import pandas as pd
@@ -935,9 +934,9 @@ class Pvlib(BaseModel):
         
         if n_jobs == 1:
             logger.debug(
-                f"_pvlib_model: Using sequential processing (n_jobs=1). "
-                f"This may be due to: only 1 coordinate, CPU detection returned 1, "
-                f"or user specified n_jobs=1"
+                "_pvlib_model: Using sequential processing (n_jobs=1). "
+                "This may be due to: only 1 coordinate, CPU detection returned 1, "
+                "or user specified n_jobs=1"
             )
         
         logger.info(
