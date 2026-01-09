@@ -81,13 +81,16 @@ class ERA5WindSolarHourlyDataset(ERA5WindSolarBaseDataset):
         month: int = file.month
         save_path: Path = file.path
 
+        # Limit to first 3 days when testing=True
+        max_day = 4 if self.testing else 32
+        
         full_request = {
             "product_type": self.product_type,
             "format": "netcdf",
             "variable": list(self.variables.keys()),
             "year": year,
             "month": month,
-            "day": [f"{d:02d}" for d in range(1, 32)],
+            "day": [f"{d:02d}" for d in range(1, max_day)],
             "time": [f"{t:02d}:00" for t in range(0, 24)],
         }
 
