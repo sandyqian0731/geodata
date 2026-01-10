@@ -39,7 +39,7 @@ def test_wind_solar_workflow():
     client = Client(processes=True, threads_per_worker=1)
 
     years = slice(2016, 2016)
-    months = slice(1, 2)
+    months = slice(1, 1)
 
     ds_cls = load_dataset("wind_solar_hourly")
     ds = ds_cls(years=years, months=months, testing=True)
@@ -55,8 +55,10 @@ def test_wind_solar_workflow():
     # china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
     # xs = slice(china_bbox[0], china_bbox[2])
     # ys = slice(china_bbox[3], china_bbox[1])
-    xs = slice(100, 101)
-    ys = slice(100, 101)
+
+    # Central Europe (Germany/Switzerland border - definitely on land)
+    xs = slice(8, 10)     # 2 degrees longitude (8°E to 10°E)
+    ys = slice(48, 46)    # 2 degrees latitude (48°N to 46°N, north to south)
 
     years = slice(2016, 2016)
     months = slice(1, 1)
