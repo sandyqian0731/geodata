@@ -103,64 +103,8 @@ def _get_xr_engine() -> str | None:
     
     Returns:
         str | None: The engine name to use, or None for default.
-        
-    Note:
-        h5netcdf has issues with HDF5 dimension scales when used in separate
-        Dask worker processes on Linux. This function switches to netcdf4
-        engine when Dask is being used on Linux to avoid the H5DSget_num_scales error.
     """
-    if XR_ENGINE is None:
-        logger.debug("_get_xr_engine: XR_ENGINE is None, returning None")
-        return None
-    
-    system = platform.system()
-    logger.debug(f"_get_xr_engine: Platform is {system}, XR_ENGINE is {XR_ENGINE}")
-    
-    # On Linux, if we're in a Dask worker or if Dask is being used,
-    # switch to netcdf4 to avoid h5netcdf issues
-    if system == "Linux":
-        try:
-            from dask.distributed import get_client, get_worker
-            # Check if we're in a worker or if a Dask client exists
-            in_worker = False
-            has_client = False
-            try:
-                get_worker()
-                in_worker = True
-                logger.debug("_get_xr_engine: Detected Dask worker on Linux")
-            except ValueError:
-                # Not in a worker, but check if client exists
-                try:
-                    get_client()
-                    has_client = True
-                    logger.debug("_get_xr_engine: Detected Dask client on Linux (not in worker)")
-                except ValueError:
-                    # No Dask client/worker
-                    logger.debug("_get_xr_engine: No Dask client/worker detected, using default engine")
-                    return XR_ENGINE
-            
-            # If we're here, Dask is being used (either in worker or client exists)
-            # Use netcdf4 engine to avoid h5netcdf issues
-            if importlib.util.find_spec("netCDF4") is not None:
-                logger.info(
-                    f"Switching to netcdf4 engine on Linux with Dask "
-                    f"(in_worker={in_worker}, has_client={has_client}) "
-                    f"to avoid h5netcdf HDF5 dimension scale issues."
-                )
-                return "netcdf4"
-            else:
-                # Fall back to None (default engine) if netcdf4 is not available
-                logger.warning(
-                    "netcdf4 not available. Using default engine on Linux with Dask. "
-                    "This may still cause HDF5 dimension scale issues with h5netcdf."
-                )
-                return None
-        except ImportError:
-            # dask.distributed not available
-            logger.debug("_get_xr_engine: dask.distributed not available")
-            pass
-    
-    logger.debug(f"_get_xr_engine: Returning default engine {XR_ENGINE}")
+    logger.debug(f"_get_xr_engine: Returning engine {XR_ENGINE}")
     return XR_ENGINE
 
 
@@ -173,7 +117,6 @@ def _should_use_parallel_reading() -> bool:
     Note:
         Parallel reading is disabled when Dask is using processes on Linux,
         as h5netcdf has issues with HDF5 dimension scales in that case.
-        Even if we switch to netcdf4, parallel reading can still cause issues.
     """
     if not XR_PARALLEL_DEFAULT:
         logger.debug("_should_use_parallel_reading: XR_PARALLEL_DEFAULT is False, returning False")
