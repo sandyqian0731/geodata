@@ -53,7 +53,7 @@ class ERA5Wind3DBaseDataset(ERA5BaseDataset):
         if isinstance(fn, list) and not all(os.path.isfile(f) for f in fn):
             return
 
-        with xr.open_dataset(fn) as ds:
+        with xr.open_dataset(fn, engine="h5netcdf") as ds:
             logger.info("Opening %s", fn)
             ds = _subset_x_y_era5(ds, xs, ys)
 

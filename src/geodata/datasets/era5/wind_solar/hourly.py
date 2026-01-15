@@ -81,13 +81,16 @@ class ERA5WindSolarHourlyDataset(ERA5WindSolarBaseDataset):
         month: int = file.month
         save_path: Path = file.path
 
+        # Limit to first 3 days when testing=True
+        max_day = 4 if self.testing else 32
+        
         full_request = {
             "product_type": self.product_type,
             "format": "netcdf",
             "variable": list(self.variables.keys()),
             "year": year,
             "month": month,
-            "day": [f"{d:02d}" for d in range(1, 32)],
+            "day": [f"{d:02d}" for d in range(1, max_day)],
             "time": [f"{t:02d}:00" for t in range(0, 24)],
         }
 
@@ -124,9 +127,9 @@ class ERA5WindSolarHourlyDataset(ERA5WindSolarBaseDataset):
                         os.path.join(tempdir, f)
                         for f in os.listdir(tempdir)
                         if f.endswith(".nc")
-                    ]
+                    ], engine="h5netcdf"
                 ) as ds:
-                    ds.to_netcdf(save_path)
+                    ds.to_netcdf(save_path, engine="h5netcdf")
 
                 logger.info("Preprocessing complete with zipfile")
                 logger.info("Successfully downloaded to %s", save_path)
