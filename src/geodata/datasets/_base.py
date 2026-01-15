@@ -308,7 +308,7 @@ class BaseDataset(abc.ABC):
             if file.check():
                 logger.debug("Postprocessing %s", file.path)
                 # Check if this is a wind-solar dataset and use h5netcdf engine
-                is_wind_solar = "wind_solar" in self.weather_config
+                # is_wind_solar = "wind_solar" in self.weather_config
                 # if is_wind_solar:
                 ds = xr.open_dataset(file.path, engine="h5netcdf").chunk("auto")
                 # else:
