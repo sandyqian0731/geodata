@@ -32,6 +32,7 @@ dependencies = [
     "pvlib>=0.12.0",
     "timezonefinder>=6.5.9",
     "pyproj>=3.6.1",
+    "cdsapi>=0.7.5",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -40,7 +41,6 @@ license = {text = "GPLv3"}
 
 [project.optional-dependencies]
 download = [
-    "cdsapi>=0.7.5",
     "herbie-data>=2025.5.0",
 ]
 notebook = [
