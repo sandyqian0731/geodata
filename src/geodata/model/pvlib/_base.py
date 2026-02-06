@@ -34,10 +34,30 @@ from pvlib.location import Location
 from pvlib.modelchain import ModelChain
 from timezonefinder import TimezoneFinder
 
+import numpy as np
+
 from .._base import BaseModel, _should_use_parallel_reading
 from geodata.logging import logger
 from .calculations import calculate_pvlib_solarposition, calculate_ghi, calculate_relative_humidity, calculate_precipitable_water, convert_kelvin_to_celsius
 from tqdm.auto import tqdm
+
+
+def _normalize_slice_for_sel(coord: xr.DataArray, s: slice) -> slice:
+    """Return a slice that selects the same coordinate range for both ascending and descending dims.
+
+    xarray's .sel(dim=slice(a, b)) returns an empty result when the dimension is descending
+    (e.g. ERA5 latitude north-to-south). This helper reverses the slice bounds when the
+    coordinate is descending so that the intended range [a, b] is selected.
+    """
+    if not isinstance(s, slice) or s.step not in (None, 1):
+        return s
+    vals = np.asarray(coord.values).ravel()
+    if len(vals) < 2 or s.start is None or s.stop is None:
+        return s
+    descending = np.all(np.diff(vals) <= 0)
+    if descending and s.start < s.stop:
+        return slice(s.stop, s.start)
+    return s
 
 class ModelChainConfig:
     """
@@ -672,11 +692,15 @@ class Pvlib(BaseModel):
                     if rename_dict:
                         params = params.rename(rename_dict)
                     
-                    # Apply spatial filtering if specified
+                    # Apply spatial filtering if specified.
+                    # Normalize slice order for descending coordinates (e.g. ERA5 latitude);
+                    # otherwise .sel() returns empty.
                     if xs is not None:
-                        params = params.sel(x=xs)
+                        x_slice = _normalize_slice_for_sel(params.coords["x"], xs) if "x" in params.coords else xs
+                        params = params.sel(x=x_slice)
                     if ys is not None:
-                        params = params.sel(y=ys)
+                        y_slice = _normalize_slice_for_sel(params.coords["y"], ys) if "y" in params.coords else ys
+                        params = params.sel(y=y_slice)
                     
                     # Transform raw dataset to standardized format
                     # This applies the same transformations as prepare_func
