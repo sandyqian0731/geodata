@@ -31,7 +31,7 @@ We will use the `wind_solar_hourly` dataset from the ERA5 dataset.
 .. code:: Python
 
     # Load the dataset
-    ds_cls = load_dataset("slv_radiation_hourly")
+    ds_cls = load_dataset("wind_solar_hourly")
     ds = ds_cls(
         years = slice(2016, 2016),
         months = slice(1, 1)
