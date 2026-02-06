@@ -81,8 +81,12 @@ def calculate_ghi(
     dni = ds.influx_direct.values.ravel()
 
     if zenith_vals.size == 0:
-        x_coord = ds.coords.get("x") or ds.coords.get("longitude") or ds.coords.get("lon")
-        y_coord = ds.coords.get("y") or ds.coords.get("latitude") or ds.coords.get("lat")
+        x_coord = ds.coords.get("x")
+        if x_coord is None:
+            x_coord = ds.coords.get("longitude") if "longitude" in ds.coords else ds.coords.get("lon")
+        y_coord = ds.coords.get("y")
+        if y_coord is None:
+            y_coord = ds.coords.get("latitude") if "latitude" in ds.coords else ds.coords.get("lat")
         x_vals = np.asarray(x_coord.values) if x_coord is not None else np.array([])
         y_vals = np.asarray(y_coord.values) if y_coord is not None else np.array([])
         time_size = ds.sizes.get("time", 0)
