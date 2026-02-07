@@ -43,21 +43,25 @@ from tqdm.auto import tqdm
 
 
 def _normalize_slice_for_sel(coord: xr.DataArray, s: slice) -> slice:
-    """Return a slice that selects the same coordinate range for both ascending and descending dims.
+    """Return a slice that selects the intended coordinate range regardless of bound order or dim direction.
 
-    xarray's .sel(dim=slice(a, b)) returns an empty result when the dimension is descending
-    (e.g. ERA5 latitude north-to-south). This helper reverses the slice bounds when the
-    coordinate is descending so that the intended range [a, b] is selected.
+    - xarray's .sel(dim=slice(a, b)) returns empty when the dimension is descending (e.g. ERA5
+      latitude) or when the user passes slice(high, low) on an ascending dimension (e.g. slice(125, 114.5)).
+    - This helper always interprets the slice as the logical range [min(start, stop), max(start, stop)]
+      and returns slice bounds in the order required by .sel() for the coordinate's direction.
     """
     if not isinstance(s, slice) or s.step not in (None, 1):
         return s
-    vals = np.asarray(coord.values).ravel()
-    if len(vals) < 2 or s.start is None or s.stop is None:
+    if s.start is None or s.stop is None:
         return s
+    lo, hi = min(s.start, s.stop), max(s.start, s.stop)
+    vals = np.asarray(coord.values).ravel()
+    if len(vals) < 2:
+        return slice(lo, hi)
     descending = np.all(np.diff(vals) <= 0)
-    if descending and s.start < s.stop:
-        return slice(s.stop, s.start)
-    return s
+    if descending:
+        return slice(hi, lo)
+    return slice(lo, hi)
 
 class ModelChainConfig:
     """
