@@ -80,6 +80,33 @@ def calculate_ghi(
     dhi = ds.influx_diffuse.values.ravel()
     dni = ds.influx_direct.values.ravel()
 
+    if zenith_vals.size == 0:
+        x_coord = ds.coords.get("x")
+        if x_coord is None:
+            x_coord = ds.coords.get("longitude") if "longitude" in ds.coords else ds.coords.get("lon")
+        y_coord = ds.coords.get("y")
+        if y_coord is None:
+            y_coord = ds.coords.get("latitude") if "latitude" in ds.coords else ds.coords.get("lat")
+        x_vals = np.asarray(x_coord.values) if x_coord is not None else np.array([])
+        y_vals = np.asarray(y_coord.values) if y_coord is not None else np.array([])
+        time_size = ds.sizes.get("time", 0)
+
+        def _fmt_coord(arr: np.ndarray, max_show: int = 20) -> str:
+            if len(arr) == 0:
+                return "[]"
+            if len(arr) <= max_show:
+                return str(arr.tolist())
+            return f"[{arr.min():g}..{arr.max():g}] (length={len(arr)})"
+
+        raise ValueError(
+            "Cannot calculate GHI: dataset has no data points. "
+            "This typically occurs when xs/ys slices do not overlap with the dataset's "
+            "coordinates, or when the loaded dataset is empty. "
+            f"Dataset dimensions: time={time_size}, x={_fmt_coord(x_vals)}, "
+            f"y={_fmt_coord(y_vals)}. "
+            "Check that your xs and ys values (in degrees) overlap with these coordinate ranges."
+        )
+
     # TODO: check if zenith is in degrees or radians and convert to radians if needed
     # it is processed from get_solarposition()
     # if zenith is in degrees, convert to radians

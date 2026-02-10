@@ -29,11 +29,10 @@ Welcome to Geodata's documentation!
 .. toctree::
    :maxdepth: 1
    :caption: Modeling
-   :glob:
    :hidden:
 
    modeling/wind/index
-   modeling/*
+   modeling/pvlib/index
 
 .. toctree::
    :maxdepth: 1

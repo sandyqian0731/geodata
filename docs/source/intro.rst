@@ -47,6 +47,11 @@ requirements and disk usage.
 
 Geodata currently supports MERRA-2 and ERA5 reanalysis products and
 various GIS file formats (see :doc:`here<quick_start/input_output>`).
+
+**Note**:
+If you are exploring ERA5 data with wind or pvlib model, please refer to the :doc:`modeling/wind/index` and :doc:`modeling/pvlib/index` pages for more details.
+As they are following the dataset module to download data, not the following legacy code.
+
 For example, to evaluate solar PV availability using
 `MERRA2 <https://disc.gsfc.nasa.gov/datasets/M2T1NXRAD_5.12.4/summary&sa=D&source=docs&ust=1646032882397245&usg=AOvVaw1WJVA5CNhT-7x_XWIA58o5>`__
 on 01/01/2011, use the following method call:
