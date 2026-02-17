@@ -345,6 +345,8 @@ class BaseModel(abc.ABC):
                     result.ref_files,
                     engine=engine,
                     parallel=parallel,
+                    combine="nested",
+                    concat_dim="time",
                 ) as ds:
                     prepared_ds = self._prepare_dataset(ds)
                     result.register(prepared_ds)
