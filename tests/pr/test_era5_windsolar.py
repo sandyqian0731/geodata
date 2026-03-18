@@ -21,6 +21,7 @@ import xarray as xr
 from geodata.datasets import load_dataset
 from geodata.logging import logger
 from geodata.model.pvlib import Pvlib
+from geodata.model.wind import WindInterpolationModel
 
 # Set logger to DEBUG level to see all debug messages
 logger.setLevel(logging.DEBUG)
@@ -107,6 +108,28 @@ def test_wind_solar_workflow():
     assert ac_power_and_pv_capacity_global is not None, "Capacity factor estimation should return a result"
     assert isinstance(ac_power_and_pv_capacity_global, (xr.DataArray, xr.Dataset)), \
         "Capacity factor should be an xarray DataArray or Dataset"
+
+    # pvlib output should preserve spatial dimensions like the wind models.
+    # We enforce the exact dimension order: ("time", "x", "y").
+    assert list(ac_power_and_pv_capacity_global.dims) == ['time', 'x', 'y'], \
+        "pvlib output dims must be ordered exactly as (time, x, y)"
+
+    # Also enforce the same dim order for wind interpolation output.
+    wind_ds_cls = load_dataset("wind_3d_hourly")
+    wind_ds = wind_ds_cls(years=years, months=months, testing=True)
+    wind_ds.download()
+    assert wind_ds.downloaded, "Wind dataset should be downloaded successfully"
+
+    wind_model = WindInterpolationModel(wind_ds)
+    wind_model.prepare()
+
+    wind_speed = wind_model.estimate(
+        years=years, months=months, xs=xs, ys=ys, height=12
+    )
+    assert list(wind_speed.dims) == ['time', 'x', 'y'], \
+        "windinterpolation output dims must be ordered exactly as (time, x, y)"
+    assert 'valid_time' not in wind_speed.dims and 'valid_time' not in wind_speed.coords, \
+        "windinterpolation output must use `time` (not `valid_time`)"
     
     # TODO: design correct output test specific regard to the pvlib output
 
