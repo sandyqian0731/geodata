@@ -70,6 +70,7 @@ Test Categories Explained:
 """
 
 import logging
+import os
 from typing import Optional
 
 import xarray as xr
@@ -78,6 +79,10 @@ from geodata.datasets import load_dataset
 
 logging.basicConfig(level=logging.INFO)
 
+# PRs should run with zero CDS calls. Enable integration download tests only via:
+#   GEODATA_RUN_CDS_TESTS=1
+RUN_CDS_TESTS = os.getenv("GEODATA_RUN_CDS_TESTS") == "1"
+
 
 # ============================================================================
 # TEST CONFIGURATION HELPERS
@@ -85,22 +90,25 @@ logging.basicConfig(level=logging.INFO)
 
 def get_data_configs() -> list[str]:
     """Get list of dataset configurations to test."""
-    return ["wind_3d_hourly"]
+    # Default to offline fixtures for PR safety.
+    return ["wind_3d_hourly"] if RUN_CDS_TESTS else ["wind_3d_hourly_test"]
 
 
 def get_bounds() -> list[list[float]]:
     """Get list of bounding boxes to test (lon_min, lat_min, lon_max, lat_max)."""
-    return [[50, 0, 48, 3]]  # Small test region
+    # Bounds are only meaningful for real downloads. Fixture files are not
+    # regenerated per-bounds and therefore shouldn't be validated against bounds.
+    return [[50, 0, 48, 3]] if RUN_CDS_TESTS else [None]  # type: ignore[list-item]
 
 
 def get_years() -> list[slice]:
     """Get list of year ranges to test."""
-    return [slice(2005, 2005)]
+    return [slice(2005, 2005)] if RUN_CDS_TESTS else [slice(2016, 2016)]
 
 
 def get_months() -> list[slice]:
     """Get list of month ranges to test."""
-    return [slice(1, 2)]
+    return [slice(1, 2)] if RUN_CDS_TESTS else [slice(1, 1)]
 
 
 def get_dataset(
@@ -116,7 +124,13 @@ def get_dataset(
         years=year, months=month, bounds=bound, testing=testing
     )
     if not dataset.downloaded:
-        dataset.download()
+        if RUN_CDS_TESTS:
+            dataset.download()
+        else:
+            raise AssertionError(
+                f"Dataset {data_config} is not downloaded, but CDS tests are disabled. "
+                "Use fixture configs or set GEODATA_RUN_CDS_TESTS=1."
+            )
     return dataset
 
 
@@ -133,6 +147,10 @@ def test_download():
     they work before running longer tests. This is the foundation for all
     other data-dependent tests.
     """
+    if not RUN_CDS_TESTS:
+        # This test verifies CDS download pipeline. Keep it opt-in.
+        return
+
     configs = get_data_configs()
     years = get_years()
     months = get_months()
@@ -155,11 +173,15 @@ def test_catalog_generation():
     catalog generation means missing data or unnecessary downloads. Testing
     this ensures we know exactly what will be downloaded before we download it.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
     
     # Test monthly catalog (if applicable)
-    dataset = dataset_cls(years=slice(2005, 2005), months=slice(1, 1), testing=True)
+    dataset = dataset_cls(
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
+        months=slice(1, 1),
+        testing=True,
+    )
     catalog = dataset.catalog
     
     assert len(catalog) > 0, "Catalog should contain at least one file"
@@ -169,7 +191,7 @@ def test_catalog_generation():
         assert hasattr(file, "year"), "Catalog entry should have year"
         assert hasattr(file, "month"), "Catalog entry should have month"
         assert hasattr(file, "path"), "Catalog entry should have path"
-        assert file.year == 2005, "Year should match"
+        assert file.year == (2005 if RUN_CDS_TESTS else 2016), "Year should match"
         assert file.month == 1, "Month should match"
 
 
@@ -180,6 +202,10 @@ def test_catalog_testing_mode():
     WHY: Testing mode should limit downloads to a few days/months to speed up
     tests. If this doesn't work correctly, tests become slow and expensive.
     """
+    if not RUN_CDS_TESTS:
+        # Fixture datasets have fixed catalogs; testing mode isn't meaningful here.
+        return
+
     config = "wind_3d_hourly"
     dataset_cls = load_dataset(config)
     
@@ -211,9 +237,13 @@ def test_catalog_paths():
     WHY: File paths determine where data is stored. Incorrect paths lead to
     data being saved in wrong locations or files overwriting each other.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
-    dataset = dataset_cls(years=slice(2005, 2005), months=slice(1, 1), testing=True)
+    dataset = dataset_cls(
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
+        months=slice(1, 1),
+        testing=True,
+    )
     
     catalog = dataset.catalog
     paths = {file.path for file in catalog}
@@ -294,6 +324,9 @@ def test_bounds_validation():
     downloading unnecessary data or missing required data. Also validates that
     invalid bounds are rejected early.
     """
+    if not RUN_CDS_TESTS:
+        return
+
     config = "wind_3d_hourly"
     dataset_cls = load_dataset(config)
     
@@ -358,9 +391,13 @@ def test_dataset_properties():
     WHY: Dataset properties (projection, lat_direction, frequency) are used
     throughout the codebase for processing. Incorrect properties break analysis.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
-    dataset = dataset_cls(years=slice(2005, 2005), months=slice(1, 1), testing=True)
+    dataset = dataset_cls(
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
+        months=slice(1, 1),
+        testing=True,
+    )
     
     # Test required properties exist
     assert hasattr(dataset, "projection"), "Dataset should have projection property"
@@ -383,15 +420,19 @@ def test_dataset_repr():
     WHY: The __repr__ method is used for debugging and logging. It should provide
     useful information about the dataset state.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
-    dataset = dataset_cls(years=slice(2005, 2005), months=slice(1, 1), testing=True)
+    dataset = dataset_cls(
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
+        months=slice(1, 1),
+        testing=True,
+    )
     
     repr_str = repr(dataset)
     
     # Should contain key information
-    assert "wind_3d_hourly" in repr_str, "repr should contain weather_config"
-    assert "2005" in repr_str, "repr should contain years"
+    assert dataset.weather_config in repr_str, "repr should contain weather_config"
+    assert ("2005" if RUN_CDS_TESTS else "2016") in repr_str, "repr should contain years"
     assert "1" in repr_str, "repr should contain months"
 
 
@@ -442,10 +483,16 @@ def test_data_dimensions():
     a 3D wind dataset should have a level/height dimension. Missing dimensions
     indicate incorrect data structure.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
-    dataset = dataset_cls(years=slice(2005, 2005), months=slice(1, 1), bounds=get_bounds()[0], testing=True)
-    dataset.download()
+    dataset = dataset_cls(
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
+        months=slice(1, 1),
+        bounds=get_bounds()[0],
+        testing=True,
+    )
+    if RUN_CDS_TESTS and not dataset.downloaded:
+        dataset.download()
     
     # Check first downloaded file
     for file in dataset.catalog:
@@ -473,15 +520,16 @@ def test_data_value_ranges():
     WHY: Data values should be within physically plausible ranges. Out-of-range
     values indicate data corruption or processing errors.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
     dataset = dataset_cls(
-        years=slice(2005, 2005),
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
         months=slice(1, 1),
         bounds=get_bounds()[0],
         testing=True
     )
-    dataset.download()
+    if RUN_CDS_TESTS and not dataset.downloaded:
+        dataset.download()
     
     # Check first downloaded file
     for file in dataset.catalog:
@@ -496,7 +544,8 @@ def test_data_value_ranges():
                 
                 # Wind components should be within reasonable range
                 # (typical wind speeds are -100 to 100 m/s)
-                if "u" in var.lower() or "v" in var.lower():
+                var_str = str(var)
+                if "u" in var_str.lower() or "v" in var_str.lower():
                     if data.notnull().any():
                         data_min = float(data.min())
                         data_max = float(data.max())
@@ -522,15 +571,16 @@ def test_postprocessing_applied():
     applied consistently. If postprocessing fails silently, downstream code
     expecting transformed data will fail.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
     dataset = dataset_cls(
-        years=slice(2005, 2005),
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
         months=slice(1, 1),
         bounds=get_bounds()[0],
         testing=True
     )
-    dataset.download()
+    if RUN_CDS_TESTS and not dataset.downloaded:
+        dataset.download()
     
     # Check that postprocessed files have correct structure
     for file in dataset.catalog:
@@ -584,6 +634,10 @@ def test_testing_mode():
     WHY: Testing mode is crucial for fast CI/CD pipelines. If it doesn't work
     correctly, tests become too slow or download too much data.
     """
+    if not RUN_CDS_TESTS:
+        # Fixture datasets ignore testing-mode catalog limiting; keep this check opt-in.
+        return
+
     config = "wind_3d_hourly"
     dataset_cls = load_dataset(config)
     
@@ -611,15 +665,19 @@ def test_storage_path():
     WHY: Files must be saved to the correct location for proper organization
     and retrieval. Wrong paths make it impossible to find downloaded data.
     """
-    config = "wind_3d_hourly"
+    config = "wind_3d_hourly" if RUN_CDS_TESTS else "wind_3d_hourly_test"
     dataset_cls = load_dataset(config)
-    dataset = dataset_cls(years=slice(2005, 2005), months=slice(1, 1), testing=True)
+    dataset = dataset_cls(
+        years=slice(2005, 2005) if RUN_CDS_TESTS else slice(2016, 2016),
+        months=slice(1, 1),
+        testing=True,
+    )
     
     # Storage root should follow expected pattern
     assert dataset.storage_root is not None, "Storage root should be set"
     assert "era5" in str(dataset.storage_root), \
         "Storage root should contain module name"
-    assert "wind_3d_hourly" in str(dataset.storage_root), \
+    assert dataset.weather_config in str(dataset.storage_root), \
         "Storage root should contain weather_config"
 
 
@@ -630,6 +688,9 @@ def test_bounds_applied():
     WHY: When bounds are specified, data should be filtered to those bounds.
     Downloading global data when only a region is needed wastes resources.
     """
+    if not RUN_CDS_TESTS:
+        return
+
     config = "wind_3d_hourly"
     dataset_cls = load_dataset(config)
     
