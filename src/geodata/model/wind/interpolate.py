@@ -227,7 +227,7 @@ class WindInterpolationModel(WindBaseModel):
     >>> model.estimate(height=12, xs=slice(1, 2), ys=slice(1, 2), years=slice(2010, 2010), months=slice(1, 2))
     """
 
-    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_3d_hourly",)
+    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_3d_hourly", "wind_3d_hourly_test")
 
     def _prepare_dataset(
         self,

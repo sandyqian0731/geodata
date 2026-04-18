@@ -464,7 +464,7 @@ class Pvlib(BaseModel):
     def type(self) -> str:
         return "pvlib"
 
-    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_solar_hourly",)
+    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_solar_hourly", "wind_solar_hourly_test")
 
     @property
     def prepared(self) -> bool:

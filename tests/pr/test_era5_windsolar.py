@@ -14,123 +14,105 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
-from dask.distributed import Client
 
 import xarray as xr
+from dask.distributed import Client
 
 from geodata.datasets import load_dataset
+from geodata.datasets._base import BaseDataset
 from geodata.logging import logger
 from geodata.model.pvlib import Pvlib
 from geodata.model.wind import WindInterpolationModel
 
-# Set logger to DEBUG level to see all debug messages
 logger.setLevel(logging.DEBUG)
 
+
+def _fixture_xy_slices(dataset: BaseDataset) -> tuple[slice, slice]:
+    """Build ``xs``, ``ys`` slices on the fixture grid (``x``/``y`` or ERA5 ``longitude``/``latitude``)."""
+    path = dataset.catalog[0].path
+    with xr.open_dataset(path, engine="h5netcdf") as opened:
+        if "x" in opened.coords:
+            xv = opened["x"].values
+            yv = opened["y"].values
+        else:
+            xv = opened["longitude"].values
+            yv = opened["latitude"].values
+    xs = slice(float(xv[0]), float(xv[-1]))
+    ys = slice(float(yv[0]), float(yv[-1]))
+    return xs, ys
+
+
 def test_wind_solar_workflow():
-    """Test that the wind interpolation workflow completes without errors.
-    
-    This test verifies:
-    - Dataset can be loaded and downloaded
-    - Model can be created and prepared
-    - Capacity factor estimation works (globally and with bounds)
-    - Wind speed estimation works at a specific height
-    - Results can be computed and have valid values
-    """
-
-    client = Client(processes=True, threads_per_worker=1)
+    """Pvlib + wind interpolation using offline ``*_test`` fixtures (no CDS)."""
 
     years = slice(2016, 2016)
     months = slice(1, 1)
 
-    ds_cls = load_dataset("wind_solar_hourly")
-    ds = ds_cls(years=years, months=months, testing=True)
+    with Client(processes=True, threads_per_worker=1):
+        ds_cls = load_dataset("wind_solar_hourly_test")
+        ds = ds_cls(years=years, months=months)
+        assert ds.downloaded, "Fixture NetCDF should be present"
 
-    ds.download()
-    assert ds.downloaded, "Dataset should be downloaded successfully"
+        xs, ys = _fixture_xy_slices(ds)
 
-    # Create model with the dataset
-    model = Pvlib(ds)
-    assert model is not None, "Model should be created successfully"
-    
-    # TODO: use a smaller region for testing
-    # china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
-    # xs = slice(china_bbox[0], china_bbox[2])
-    # ys = slice(china_bbox[3], china_bbox[1])
+        model = Pvlib(ds)
+        assert model is not None
 
-    # Central Europe (Germany/Switzerland border - definitely on land)
-    xs = slice(8, 10)     # 2 degrees longitude (8°E to 10°E)
-    ys = slice(48, 46)    # 2 degrees latitude (48°N to 46°N, north to south)
+        n_mods = 50
+        n_strings = 1
+        cec_modules = model.retrieve_sam("CECMod")
+        module = cec_modules["Kaneka_U_SA105"]
+        inv = model.retrieve_sam("CECInverter")["Fronius_USA__CL_33_3_Delta__208V_"]
+        model.init_pv_system(
+            arrays=None,
+            surface_tilt=35,
+            surface_azimuth=180,
+            racking_model="open_rack",
+            module_parameters=module,
+            modules_per_string=n_mods,
+            module_type="glass_polymer",
+            module="Kaneka_U_SA105",
+            strings_per_inverter=n_strings,
+            inverter_parameters=inv,
+        )
+        assert model.pv_system is not None
 
-    years = slice(2016, 2016)
-    months = slice(1, 1)
+        model.init_model_config(
+            clearsky_model="haurwitz",
+            transposition_model="perez",
+            solar_position_method="nrel_numpy",
+            airmass_model="kastenyoung1989",
+            dc_model="cec",
+            ac_model="sandia",
+            aoi_model="physical",
+            spectral_model="first_solar",
+            dc_ohmic_model="no_loss",
+        )
+        assert model.config is not None
 
-    # TODO: add a test here to test that
-    # the model must not estimate without pv_system and model_config
+        ac_power_and_pv_capacity_global = model.estimate(
+            years=years, months=months, xs=xs, ys=ys
+        )
+        assert ac_power_and_pv_capacity_global is not None
+        assert isinstance(
+            ac_power_and_pv_capacity_global, (xr.DataArray, xr.Dataset)
+        )
+        assert list(ac_power_and_pv_capacity_global.dims) == ["time", "x", "y"]
 
-    # create the pv_system
-    n_mods = 50
-    n_strings = 1
-    cec_modules = model.retrieve_sam('CECMod')
-    module = cec_modules['Kaneka_U_SA105']
-    inv = model.retrieve_sam("CECInverter")['Fronius_USA__CL_33_3_Delta__208V_']
-    model.init_pv_system(
-        arrays = None,
-        surface_tilt=35,
-        surface_azimuth=180,
-        racking_model = 'open_rack',
-        module_parameters=module,
-        modules_per_string = n_mods,
-        module_type = 'glass_polymer',
-        module = 'Kaneka_U_SA105',
-        strings_per_inverter = n_strings, 
-        inverter_parameters=inv
-    )
+        wind_ds_cls = load_dataset("wind_3d_hourly_test")
+        wind_ds = wind_ds_cls(years=years, months=months)
+        assert wind_ds.downloaded, "Wind fixture NetCDF should be present"
 
-    assert model.pv_system is not None, "pv_system should be seccesfully created"
-    # TODO: assert it to the correct type
+        wxs, wys = _fixture_xy_slices(wind_ds)
 
-    # create the model_config
-    model.init_model_config(
-        clearsky_model= 'haurwitz',
-        transposition_model='perez', 
-        solar_position_method= 'nrel_numpy',
-        airmass_model= 'kastenyoung1989',
-        dc_model='cec',
-        ac_model='sandia', 
-        aoi_model="physical",
-        spectral_model='first_solar',
-        dc_ohmic_model='no_loss'
-    )
-    assert model.config is not None, "model config should be successfully created"
+        wind_model = WindInterpolationModel(wind_ds)
+        wind_model.prepare()
 
-    # Test capacity factor estimation globally
-    ac_power_and_pv_capacity_global = model.estimate(years=years, months=months, xs=xs, ys=ys)
-    assert ac_power_and_pv_capacity_global is not None, "Capacity factor estimation should return a result"
-    assert isinstance(ac_power_and_pv_capacity_global, (xr.DataArray, xr.Dataset)), \
-        "Capacity factor should be an xarray DataArray or Dataset"
-
-    # pvlib output should preserve spatial dimensions like the wind models.
-    # We enforce the exact dimension order: ("time", "x", "y").
-    assert list(ac_power_and_pv_capacity_global.dims) == ['time', 'x', 'y'], \
-        "pvlib output dims must be ordered exactly as (time, x, y)"
-
-    # Also enforce the same dim order for wind interpolation output.
-    wind_ds_cls = load_dataset("wind_3d_hourly")
-    wind_ds = wind_ds_cls(years=years, months=months, testing=True)
-    wind_ds.download()
-    assert wind_ds.downloaded, "Wind dataset should be downloaded successfully"
-
-    wind_model = WindInterpolationModel(wind_ds)
-    wind_model.prepare()
-
-    wind_speed = wind_model.estimate(
-        years=years, months=months, xs=xs, ys=ys, height=12
-    )
-    assert list(wind_speed.dims) == ['time', 'x', 'y'], \
-        "windinterpolation output dims must be ordered exactly as (time, x, y)"
-    assert 'valid_time' not in wind_speed.dims and 'valid_time' not in wind_speed.coords, \
-        "windinterpolation output must use `time` (not `valid_time`)"
-    
-    # TODO: design correct output test specific regard to the pvlib output
-
-    client.close()
+        wind_speed = wind_model.estimate(
+            years=years, months=months, xs=wxs, ys=wys, height=12
+        )
+        assert list(wind_speed.dims) == ["time", "x", "y"]
+        assert (
+            "valid_time" not in wind_speed.dims
+            and "valid_time" not in wind_speed.coords
+        )

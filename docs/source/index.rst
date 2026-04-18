@@ -67,6 +67,13 @@ Welcome to Geodata's documentation!
 
 .. toctree::
    :maxdepth: 1
+   :caption: Development
+   :hidden:
+
+   development/offline-era5-fixture-datasets
+
+.. toctree::
+   :maxdepth: 1
    :caption: API Reference
    :hidden:
 

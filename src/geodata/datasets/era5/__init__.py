@@ -13,6 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from . import wind_3d, wind_solar
+from . import fixture, wind_3d, wind_solar
 
-__all__ = ["wind_3d", "wind_solar"]
+__all__ = ["fixture", "wind_3d", "wind_solar"]

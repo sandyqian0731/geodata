@@ -14,76 +14,71 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
-from dask.distributed import Client
 
 import xarray as xr
+from dask.distributed import Client
 
 from geodata.datasets import load_dataset
+from geodata.datasets._base import BaseDataset
 from geodata.logging import logger
 from geodata.model.wind import WindInterpolationModel
 
-# Set logger to DEBUG level to see all debug messages
 logger.setLevel(logging.DEBUG)
 
 
-def test_wind_interpolation_workflow():
-    """Test that the wind interpolation workflow completes without errors.
-    
-    This test verifies:
-    - Dataset can be loaded and downloaded
-    - Model can be created and prepared
-    - Capacity factor estimation works (globally and with bounds)
-    - Wind speed estimation works at a specific height
-    - Results can be computed and have valid values
-    """
+def _fixture_xy_slices(dataset: BaseDataset) -> tuple[slice, slice]:
+    """Build ``xs``, ``ys`` slices on the fixture grid (``x``/``y`` or ERA5 ``longitude``/``latitude``)."""
+    path = dataset.catalog[0].path
+    with xr.open_dataset(path, engine="h5netcdf") as opened:
+        if "x" in opened.coords:
+            xv = opened["x"].values
+            yv = opened["y"].values
+        else:
+            xv = opened["longitude"].values
+            yv = opened["latitude"].values
+    xs = slice(float(xv[0]), float(xv[-1]))
+    ys = slice(float(yv[0]), float(yv[-1]))
+    return xs, ys
 
-    client = Client(processes=True, threads_per_worker=1)
+
+def test_wind_interpolation_workflow():
+    """Wind interpolation workflow using offline ``wind_3d_hourly_test`` fixtures (no CDS).
+
+    Verifies:
+    - Fixture dataset is registered and on disk
+    - Model can be created and prepared
+    - Capacity factor and wind-speed estimates run on the fixture extent
+    """
 
     years = slice(2016, 2016)
     months = slice(1, 1)
 
-    ds_cls = load_dataset("wind_3d_hourly")
-    ds = ds_cls(years=years, months=months, testing=True)
+    with Client(processes=True, threads_per_worker=1):
+        ds_cls = load_dataset("wind_3d_hourly_test")
+        ds = ds_cls(years=years, months=months)
+        assert ds.downloaded, "Fixture NetCDF should be present"
 
-    ds.download()
-    assert ds.downloaded, "Dataset should be downloaded successfully"
+        xs, ys = _fixture_xy_slices(ds)
 
-    # Create model with the dataset
-    model = WindInterpolationModel(ds)
-    assert model is not None, "Model should be created successfully"
-    
-    # Force re-preparation to see debug logs (comment out if you want to skip preparation)
-    model.prepare(force=True)
-    
-    turbine_name = "Enercon_E126_7500kW"
-    china_bbox = (73.5, 18.2, 135.1, 53.6)  # China bounding box
-    xs = slice(china_bbox[0], china_bbox[2])
-    ys = slice(china_bbox[3], china_bbox[1])
+        model = WindInterpolationModel(ds)
+        assert model is not None
+        model.prepare(force=True)
 
-    # Test capacity factor estimation globally
-    cf_global = model.estimate(turbine=turbine_name)
-    assert cf_global is not None, "Capacity factor estimation should return a result"
-    assert isinstance(cf_global, (xr.DataArray, xr.Dataset)), \
-        "Capacity factor should be an xarray DataArray or Dataset"
-    
-    # Test capacity factor estimation for China only
-    cf_china = model.estimate(turbine=turbine_name, xs=xs, ys=ys)
-    assert cf_china is not None, "Capacity factor estimation with bounds should return a result"
-    assert isinstance(cf_china, (xr.DataArray, xr.Dataset)), \
-        "Capacity factor with bounds should be an xarray DataArray or Dataset"
+        turbine_name = "Enercon_E126_7500kW"
 
-    # Test wind speed estimation at specific height
-    speed = model.estimate(height=100.0, xs=xs, ys=ys)
-    assert speed is not None, "Wind speed estimation should return a result"
-    assert isinstance(speed, xr.DataArray), \
-        "Wind speed should be an xarray DataArray"
+        cf_global = model.estimate(turbine=turbine_name)
+        assert cf_global is not None
+        assert isinstance(cf_global, (xr.DataArray, xr.Dataset))
 
-    # Test that results can be computed
-    cf_computed = cf_china.compute()
-    assert cf_computed is not None, "Computed capacity factor should not be None"
-    
-    # Test that max value can be calculated (verifies data is valid and operations work)
-    max_cf = cf_computed.max()
-    assert max_cf is not None, "Max capacity factor should be calculable"
+        cf_region = model.estimate(turbine=turbine_name, xs=xs, ys=ys)
+        assert cf_region is not None
+        assert isinstance(cf_region, (xr.DataArray, xr.Dataset))
 
-    client.close()
+        speed = model.estimate(height=100.0, xs=xs, ys=ys)
+        assert speed is not None
+        assert isinstance(speed, xr.DataArray)
+
+        cf_computed = cf_region.compute()
+        assert cf_computed is not None
+        max_cf = cf_computed.max()
+        assert max_cf is not None
