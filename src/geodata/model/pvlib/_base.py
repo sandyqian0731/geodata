@@ -381,11 +381,23 @@ def _process_single_coordinate(args):
             - progress_dict: Shared dictionary for progress tracking (optional)
             - coord_index: Index of this coordinate in the total list
             - total_coords: Total number of coordinates to process
+            - compact_output: Whether to keep only ac/pv in output
     
     Returns:
         Tuple of (coord, subset_df) where subset_df contains the processed data
     """
-    (y, x), weather_data, system, model_chain_kwargs, ptc, n_mods, progress_dict, coord_index, total_coords = args
+    (
+        (y, x),
+        weather_data,
+        system,
+        model_chain_kwargs,
+        ptc,
+        n_mods,
+        progress_dict,
+        coord_index,
+        total_coords,
+        compact_output,
+    ) = args
     
     try:
         # Extract subset for this coordinate
@@ -440,7 +452,10 @@ def _process_single_coordinate(args):
         #
         # `subset` is currently indexed only by `time` (x/y were reset into columns),
         # which would otherwise cause the output to have only `time` as a coordinate.
-        subset_out = subset[['ac', 'pv']].copy()
+        if compact_output:
+            subset_out = subset[['ac', 'pv']].copy()
+        else:
+            subset_out = subset.copy()
         subset_out = subset_out.assign(y=y, x=x)
         subset_out = subset_out.reset_index()
 
@@ -616,7 +631,13 @@ class Pvlib(BaseModel):
             Dataset with AC power and PV capacity (returns Dataset, but BaseModel expects DataArray)
         """
 
-        result = self._pvlib_model(params, self.pv_system, self.config)
+        compact_output = kwargs.get("compact_output", True)
+        result = self._pvlib_model(
+            params,
+            self.pv_system,
+            self.config,
+            compact_output=compact_output,
+        )
         return result
     
     def estimate(self,
@@ -624,6 +645,7 @@ class Pvlib(BaseModel):
         months: slice | None = None,
         xs: slice | None = None,
         ys: slice | None = None,
+        compact_output: bool = True,
         **kwargs,
         ) -> xr.DataArray:
             """Get pvlib model results.
@@ -636,6 +658,8 @@ class Pvlib(BaseModel):
                 months: Month range (slice)
                 xs: X-coordinate range (slice)
                 ys: Y-coordinate range (slice)
+                compact_output: If True (default), return only `ac` and `pv`
+                    as data variables. If False, keep full per-coordinate output.
                 **kwargs: Additional parameters
             
             Returns:
@@ -737,7 +761,11 @@ class Pvlib(BaseModel):
                         )
                     
                     # Process this month's data
-                    monthly_output = self._estimate_dataset(params, **kwargs)
+                    monthly_output = self._estimate_dataset(
+                        params,
+                        compact_output=compact_output,
+                        **kwargs,
+                    )
                     
                     # Store the result (will concatenate later)
                     monthly_results.append(monthly_output)
@@ -877,7 +905,8 @@ class Pvlib(BaseModel):
         system: pvsystem.PVSystem,
         model_chain_config: ModelChainConfig,
         vars: list[str] = ["influx_diffuse", "influx_direct", "dewpoint_temperature", "temperature", "wnd100m"],
-        n_jobs: int | None = None
+        n_jobs: int | None = None,
+        compact_output: bool = True,
     ) -> xr.Dataset:
         
         """
@@ -954,6 +983,9 @@ class Pvlib(BaseModel):
         vars : list of str, optional
             List of variable names required for simulation. Defaults to:
             ['influx_diffuse', 'influx_direct', 'dewpoint_temperature', 'temperature', 'wnd100m'].
+        compact_output : bool, optional
+            If True (default), keep only `ac` and `pv` data variables in the
+            final output. If False, keep the full per-coordinate output.
 
         Returns
         -------
@@ -1016,7 +1048,8 @@ class Pvlib(BaseModel):
                 n_mods,
                 progress_dict,
                 idx,
-                total_coords
+                total_coords,
+                compact_output,
             )
             for idx, (y, x) in enumerate(unique_coords, 1)
         ]
