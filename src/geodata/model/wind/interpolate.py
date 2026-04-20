@@ -217,6 +217,11 @@ class WindInterpolationModel(WindBaseModel):
     This model uses the ERA5 3D dataset to estimate wind speed at a given height using
     spline interpolation.
 
+    For ``estimate(..., xs=..., ys=...)``, each spatial slice may use either bound order
+    (``slice(low, high)`` or ``slice(high, low)``); ``BaseModel.estimate`` normalizes
+    slices to the coordinate monotonic direction before ``xarray.Dataset.sel``, including
+    for descending coordinates (e.g. latitude).
+
     Example:
 
     >>> from geodata import Dataset

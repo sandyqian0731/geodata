@@ -22,6 +22,7 @@ import shutil
 from collections.abc import Collection
 from typing import ClassVar, Optional
 
+import numpy as np
 import xarray as xr
 from tqdm.auto import tqdm
 
@@ -40,6 +41,29 @@ else:
         "h5netcdf is not installed. Parallel reading of netCDF files will be disabled. "
         "This could have some performance implications."
     )
+
+
+def _normalize_slice_for_sel(coord: xr.DataArray, s: slice) -> slice:
+    """Return a slice for ``.sel()`` that matches the coordinate direction.
+
+    xarray's ``.sel(dim=slice(a, b))`` returns empty when the dimension is descending
+    (e.g. ERA5 latitude) or when the user passes ``slice(high, low)`` on an ascending
+    dimension. This helper interprets the slice as the inclusive logical range
+    ``[min(start, stop), max(start, stop)]`` and returns bounds in the order required
+    by ``.sel()`` for that coordinate's monotonic direction.
+    """
+    if not isinstance(s, slice) or s.step not in (None, 1):
+        return s
+    if s.start is None or s.stop is None:
+        return s
+    lo, hi = min(s.start, s.stop), max(s.start, s.stop)
+    vals = np.asarray(coord.values).ravel()
+    if len(vals) < 2:
+        return slice(lo, hi)
+    descending = np.all(np.diff(vals) <= 0)
+    if descending:
+        return slice(hi, lo)
+    return slice(lo, hi)
 
 
 def _is_in_dask_worker_on_linux() -> bool:
@@ -294,9 +318,19 @@ class BaseModel(abc.ABC):
         params = xr.open_mfdataset(files, engine=engine, parallel=parallel)
 
         if xs is not None:
-            params = params.sel(x=xs)
+            x_slice = (
+                _normalize_slice_for_sel(params.coords["x"], xs)
+                if "x" in params.coords
+                else xs
+            )
+            params = params.sel(x=x_slice)
         if ys is not None:
-            params = params.sel(y=ys)
+            y_slice = (
+                _normalize_slice_for_sel(params.coords["y"], ys)
+                if "y" in params.coords
+                else ys
+            )
+            params = params.sel(y=y_slice)
 
         output = self._estimate_dataset(params, **kwargs)
         params.close()
