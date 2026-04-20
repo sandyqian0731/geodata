@@ -15,6 +15,7 @@
 
 import logging
 from typing import Hashable
+from typing import cast
 
 import numpy as np
 import scipy.interpolate as sinterp
@@ -196,8 +197,8 @@ def _splev_ker(c: np.ndarray, t: np.ndarray, k: int, height: np.ndarray) -> np.n
     return np.atleast_1d(sinterp.splev(height, (t, c, k)))
 
 
-def _splev(da: xr.DataArray, height: float) -> xr.DataArray:
-    height = np.atleast_1d(height)
+def _splev(da: xr.Dataset, height: float) -> xr.DataArray:
+    height_arr = np.atleast_1d(height)
     return xr.apply_ufunc(
         _splev_ker,
         da["c"],
@@ -206,7 +207,7 @@ def _splev(da: xr.DataArray, height: float) -> xr.DataArray:
         vectorize=True,
         dask="parallelized",
         output_dtypes=[da["c"].dtype],
-        kwargs={"t": da.attrs["t"], "k": da.attrs["k"], "height": height},
+        kwargs={"t": da.attrs["t"], "k": da.attrs["k"], "height": height_arr},
     )
 
 
@@ -226,11 +227,11 @@ class WindInterpolationModel(WindBaseModel):
     >>> model.estimate(height=12, xs=slice(1, 2), ys=slice(1, 2), years=slice(2010, 2010), months=slice(1, 2))
     """
 
-    SUPPORTED_WEATHER_DATA_CONFIGS = {"wind_3d_hourly"}
+    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_3d_hourly", "wind_3d_hourly_test")
 
     def _prepare_dataset(
         self,
-        ds: xr.Dataset,
+        source: xr.Dataset,
         half_precision: bool = True,
     ) -> xr.Dataset:
         """Compute wind speed using the ERA5 3D dataset.
@@ -244,20 +245,20 @@ class WindInterpolationModel(WindBaseModel):
         """
 
         assert (
-            "model_level" in ds.coords
+            "model_level" in source.coords
         ), "Dataset does not contain model levels. Please double-check the dataset."
 
-        ds.coords["model_level"] = np.array(
-            [LEVEL_TO_HEIGHT[int(level)] for level in ds["model_level"].values]
+        source.coords["model_level"] = np.array(
+            [LEVEL_TO_HEIGHT[int(level)] for level in source["model_level"].values]
         )
-        ds = (
-            ds.rename({"model_level": "height"})
+        source = (
+            source.rename({"model_level": "height"})
             .transpose("height", ...)
             .sortby("height")
         )
 
-        logger.debug("Shape of heights: %s", ds["height"].shape)
-        speeds = (ds["u"] ** 2 + ds["v"] ** 2) ** 0.5
+        logger.debug("Shape of heights: %s", source["height"].shape)
+        speeds = (source["u"] ** 2 + source["v"] ** 2) ** 0.5
         logger.debug(f"[_prepare_dataset] Computed speeds, shape: {speeds.shape}, dims: {speeds.dims}, "
                     f"is dask: {isinstance(speeds.data, array_type('dask'))}")
 
@@ -269,7 +270,23 @@ class WindInterpolationModel(WindBaseModel):
 
         return params
 
-    def _estimate_dataset(self, params: xr.Dataset, height: float) -> xr.Dataset:
+    def _estimate_dataset(self, params: xr.Dataset, **kwargs) -> xr.DataArray:
+        height = float(kwargs["height"])
         params = params.transpose("height", ...)
-        params = rechunk_dataset(params, force_full_chunk_dims=["height"])
-        return _splev(params, height)
+        params = cast(
+            xr.Dataset,
+            rechunk_dataset(params, force_full_chunk_dims=["height"]),
+        )
+        result = _splev(params, height)
+
+        # Some upstream ERA5 pipelines historically use `valid_time` for the time-like
+        # coordinate. Normalize to `time` so we can enforce consistent dims.
+        if "valid_time" in result.dims or "valid_time" in result.coords:
+            result = result.rename({"valid_time": "time"})
+
+        # Standardize output dimension order across wind models:
+        # `("time", "x", "y")` (wind interpolation should match pvlib).
+        desired_order = ("time", "x", "y")
+        if all(d in result.dims for d in desired_order):
+            result = result.transpose(*desired_order)
+        return result

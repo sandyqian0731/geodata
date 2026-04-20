@@ -19,7 +19,8 @@ import importlib.util
 import os
 import platform
 import shutil
-from typing import Optional
+from collections.abc import Collection
+from typing import ClassVar, Optional
 
 import xarray as xr
 from tqdm.auto import tqdm
@@ -158,7 +159,7 @@ class BaseModel(abc.ABC):
         **kwargs: Additional keyword arguments to pass to the model.
     """
 
-    SUPPORTED_WEATHER_DATA_CONFIGS: tuple[str]
+    SUPPORTED_WEATHER_DATA_CONFIGS: ClassVar[Collection[str]]
 
     def __init__(self, source: BaseDataset, **kwargs):
         if source.weather_config not in self.SUPPORTED_WEATHER_DATA_CONFIGS:

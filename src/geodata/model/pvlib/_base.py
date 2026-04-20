@@ -434,8 +434,24 @@ def _process_single_coordinate(args):
                         'eta': eta
                     }
                     progress_dict['should_log'] = True
-        
-        return (y, x), subset
+
+        # Re-pack results into a MultiIndex so that
+        # xr.Dataset.from_dataframe() reconstructs x and y as dimensions.
+        #
+        # `subset` is currently indexed only by `time` (x/y were reset into columns),
+        # which would otherwise cause the output to have only `time` as a coordinate.
+        subset_out = subset[['ac', 'pv']].copy()
+        subset_out = subset_out.assign(y=y, x=x)
+        subset_out = subset_out.reset_index()
+
+        # After reset_index(), the time column name can vary (e.g. 'time' vs 'index').
+        if subset.index.name is None:
+            subset_out = subset_out.rename(columns={'index': 'time'})
+        elif subset.index.name != 'time':
+            subset_out = subset_out.rename(columns={subset.index.name: 'time'})
+
+        subset_out = subset_out.set_index(['time', 'x', 'y'])
+        return (y, x), subset_out
         
     except Exception as e:
         logger.error(f"Error processing coordinate ({y}, {x}): {str(e)}")
@@ -444,10 +460,11 @@ def _process_single_coordinate(args):
 
 class Pvlib(BaseModel):
     """The pvlib model"""
+    @property
+    def type(self) -> str:
+        return "pvlib"
 
-    type: str = "pvlib"
-
-    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_solar_hourly",)
+    SUPPORTED_WEATHER_DATA_CONFIGS = ("wind_solar_hourly", "wind_solar_hourly_test")
 
     @property
     def prepared(self) -> bool:
@@ -739,6 +756,11 @@ class Pvlib(BaseModel):
             if 'time' in combined_result.coords:
                 combined_result = combined_result.sortby('time')
             
+            # Standardize output dimension order across models:
+            # `("time", "x", "y")`.
+            desired_order = ("time", "x", "y")
+            if all(d in combined_result.dims for d in desired_order):
+                combined_result = combined_result.transpose(*desired_order)
             return combined_result
         
     def _prepare_pvlib_ds(self, ds: xr.Dataset, *varnames: str) -> xr.Dataset:
@@ -1069,9 +1091,13 @@ class Pvlib(BaseModel):
             f"({elapsed_total/total_coords:.2f}s per coordinate on average)"
         )
         
-        weather_data_final = pd.concat(coord_subsets)
+        weather_data_final = pd.concat(coord_subsets).sort_index()
 
-        return xr.Dataset.from_dataframe(weather_data_final)
+        out = xr.Dataset.from_dataframe(weather_data_final)
+        desired_order = ("time", "x", "y")
+        if all(d in out.dims for d in desired_order):
+            out = out.transpose(*desired_order)
+        return out
     
     def _prepare_dataset(self, source: xr.Dataset) -> xr.Dataset:
         """This will never be called, but must be implemented (abstract method)."""
