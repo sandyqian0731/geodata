@@ -45,6 +45,12 @@ from .convert import (
 )
 from .datasets._base import BaseDataset
 from .mask import Mask
+from .mask.spatial import (
+    calc_grid_area as _mask_calc_grid_area,
+    calc_shp_area as _mask_calc_shp_area,
+    coarsen as _mask_coarsen,
+    ds_reformat_index as _mask_ds_reformat_index,
+)
 from .preparation import (
     cutout_get_meta,
     cutout_get_meta_view,
@@ -657,5 +663,10 @@ def calc_shp_area(shp, shp_projection="+proj=latlon"):
     )
     return temp_shape.area / 1000000
 
+
+ds_reformat_index = _mask_ds_reformat_index
+coarsen = _mask_coarsen
+calc_grid_area = _mask_calc_grid_area
+calc_shp_area = _mask_calc_shp_area
 
 __all__ = ["Cutout", "coarsen", "calc_grid_area", "calc_shp_area"]
