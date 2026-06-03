@@ -63,7 +63,7 @@ documented until explicitly deprecated.
 | Gap | Impact | Priority | Status |
 |-----|--------|----------|--------|
 | `intro.rst` teaches legacy Cutout/convert as the main story | New users miss models + `XarrayMask` | P0 | **Done** — modern intro on homepage; legacy moved to `legacy/workflow.rst` |
-| Modeling pages missing recent API options (`compact_output`, flexible `xs`/`ys`) | Docs diverge from `src` | P0 | Open |
+| Modeling pages missing recent API options (`compact_output`, flexible `xs`/`ys`) | Docs diverge from `src` | P0 | **Done** — see modeling/wind/index and modeling/pvlib/index |
 | Wind capacity-factor internals not in wind toctree | Deep-dive exists only in source/comments | P1 | Open |
 | `xarray_mask_tutorial.ipynb` referenced by `xarray_mask_workflow.rst` but may be missing from tree | Broken `:doc:` link | P0 | Open |
 | Mask section mixes user tutorials with `mask_xarray_migration_plan.md` | Hard to tell “how-to” vs “plan” | P1 | Open |
@@ -284,8 +284,8 @@ Actionable items in recommended order.
 
 ### P0 — Sync with recent source changes
 
-4. **`modeling/pvlib/index.rst`** — document `compact_output` (default `True`), show before/after variable list.
-5. **`modeling/wind/index.rst` and interpolation.rst** — document flexible `xs`/`ys` and latitude ordering; link to coordinate behavior in `model/_base.py`.
+4. ~~**`modeling/pvlib/index.rst`** — document `compact_output`~~ — **Done**.
+5. ~~**`modeling/wind/index.rst` and interpolation.rst** — document flexible `xs`/`ys`~~ — **Done**.
 6. **`datasets/era5.rst`** — clarify CDS download vs offline fixtures; point to `development/offline-era5-fixture-datasets.md`.
 
 ### P1 — Structure and depth

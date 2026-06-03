@@ -97,12 +97,76 @@ Next, we can estimate the AC Power and PV capacity using the model.
     cf = model.estimate(
         years = slice(2016, 2016), 
         months = slice(1, 1),
-        xs = slice(8, 10), # Optional: specify the bounding box
-        ys = slice(48, 46), # here is an example bounding box for central europe
+        xs = slice(8, 10), # Optional: longitude subset
+        ys = slice(48, 46), # Optional: latitude subset (see below)
     )
     print(cf)
 
-The output will be an xarray Dataset containing the estimated AC Power and PV capacity values for the specified region and time period.
+The output will be an xarray Dataset containing the estimated AC power (``ac``) and
+capacity factor (``pv``) for the specified region and time period.
+
+Estimate options
+----------------
+
+All models inherit a common pattern for **time** and **space** subsetting via
+``estimate()``. The PVLib model adds one extra output option.
+
+Temporal subsetting
+~~~~~~~~~~~~~~~~~~~
+
+Pass ``years`` and ``months`` as ``slice`` objects to limit the period processed.
+Omit either argument to use the prepared model's full range (subject to what was
+available when ``prepare()`` ran).
+
+Spatial subsetting (``xs``, ``ys``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pass ``xs`` and ``ys`` as ``slice(start, stop)`` to restrict longitude (``x``) and
+latitude (``y``). Omit either argument to keep the full horizontal extent of the
+prepared dataset.
+
+Geodata **normalizes slice bounds** before calling xarray's ``.sel()``. You can pass
+bounds in either order (for example ``ys=slice(48, 46)`` for a band in central
+Europe) and still get a non-empty selection. This matters for ERA5-style grids where
+latitude is often stored in **descending** order: a naive ``slice(46, 48)`` would
+return no points without normalization.
+
+.. code:: Python
+
+    # Equivalent selections on a descending-latitude grid:
+    cf_a = model.estimate(years=slice(2016, 2016), months=slice(1, 1), ys=slice(48, 46))
+    cf_b = model.estimate(years=slice(2016, 2016), months=slice(1, 1), ys=slice(46, 48))
+
+Compact output (``compact_output``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, ``estimate()`` returns a compact dataset with only two data variables:
+
+- ``ac`` — AC power (W)
+- ``pv`` — capacity factor (AC output normalized by module nameplate)
+
+Set ``compact_output=False`` to retain **all intermediate weather and ModelChain
+columns** per grid cell (irradiance components, temperature, wind, and other inputs
+used along the chain). Use this for debugging or when you need columns beyond
+``ac`` and ``pv``; the result is larger and slower to write.
+
+.. code:: Python
+
+    # Default: only ac and pv
+    cf = model.estimate(
+        years=slice(2016, 2016),
+        months=slice(1, 1),
+        compact_output=True,
+    )
+    list(cf.data_vars)  # ['ac', 'pv']
+
+    # Full per-coordinate table (debugging / downstream analysis)
+    full = model.estimate(
+        years=slice(2016, 2016),
+        months=slice(1, 1),
+        compact_output=False,
+    )
+    list(full.data_vars)  # ac, pv, plus weather and intermediate columns
 
 .. toctree::
    :maxdepth: 1

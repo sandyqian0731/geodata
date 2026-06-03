@@ -76,6 +76,52 @@ Once the model is prepared, we can use it to estimate wind speed at desired heig
 The above demonstrates the typical workflow. More model-specific details can be found
 in each model's respective tutorial as well as in the API reference.
 
+Estimate options
+----------------
+
+Wind models share the same ``estimate()`` subsetting interface (defined on
+``BaseModel`` in ``geodata.model``).
+
+Temporal subsetting
+~~~~~~~~~~~~~~~~~~~
+
+Use ``years`` and ``months`` slices to limit the estimation period. For example,
+``years=slice(2006, 2006), months=slice(1, 1)`` processes January 2006 only.
+
+Spatial subsetting (``xs``, ``ys``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pass ``xs`` and ``ys`` as ``slice(start, stop)`` to restrict longitude (``x``) and
+latitude (``y``). Omit either argument to use the full horizontal domain of the
+prepared source.
+
+Geodata **normalizes slice bounds** before ``xarray.Dataset.sel()``. You may pass
+``slice(high, low)`` or ``slice(low, high)``; the helper resolves the inclusive
+range and matches the coordinate's ascending or descending order (ERA5 latitude is
+typically descending). Without this, a slice like ``ys=slice(46, 48)`` on a
+descending ``y`` axis can incorrectly return an empty selection.
+
+.. code:: Python
+
+    # Subregion over central Europe — bounds order does not matter
+    wind_speed = model.estimate(
+        height=100.0,
+        years=slice(2006, 2006),
+        months=slice(1, 1),
+        xs=slice(8, 10),
+        ys=slice(48, 46),
+    )
+
+Wind-specific arguments
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Pass **either**:
+
+- ``height=<meters>`` — hub-height or AGL wind speed (interpolation or extrapolation), or
+- ``turbine="<name>"`` — capacity factor using a turbine YAML from ``geodata.resources.windturbine`` (see :doc:`interpolation` Step 5).
+
+List available turbines with ``geodata.resource.get_available_windturbines()``.
+
 .. toctree::
    :maxdepth: 1
    :caption: Tutorials on Specific Models

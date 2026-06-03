@@ -95,9 +95,19 @@ dataset, we can do this as follows:
         months=slice(1, 1),
     )
 
-This will return an xarray DataArray containing the estimated wind speed values. Note
-that you can also select a subset area by passing in :code:`xs=slice(start, end)`
-and/or :code:`ys=slice(start, end)` parameters to the `estimate` method.
+This will return an xarray DataArray containing the estimated wind speed values. You
+can restrict the region with ``xs`` and ``ys``; see :doc:`/modeling/wind/index`
+(**Estimate options**) for flexible slice bounds on descending latitude grids.
+
+.. code:: Python
+
+    estimated_wind_speed = model.estimate(
+        height=60,
+        years=slice(2006, 2006),
+        months=slice(1, 1),
+        xs=slice(8, 10),
+        ys=slice(48, 46),
+    )
 
 
 Step 5: Estimate Wind Turbine Capacity Factor (CF) using the interpolation model
