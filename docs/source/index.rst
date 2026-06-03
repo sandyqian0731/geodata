@@ -17,6 +17,13 @@ Welcome to Geodata's documentation!
    quick_start/input_output
 
 .. toctree::
+   :maxdepth: 1
+   :caption: Legacy workflow
+   :hidden:
+
+   legacy/index
+
+.. toctree::
    :caption: Dataset Specific Tutorials
    :maxdepth: 1
    :glob:
@@ -70,6 +77,7 @@ Welcome to Geodata's documentation!
    :caption: Development
    :hidden:
 
+   development/documentation-organization-plan
    development/offline-era5-fixture-datasets
 
 .. toctree::
