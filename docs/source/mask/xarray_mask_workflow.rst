@@ -57,7 +57,8 @@ APIs. The intended usage is:
 2. Build ``XarrayMask.from_name("my_mask", grid=output_ds, mask_dir=...)`` if needed.
 3. Call ``attach(output_ds)`` or ``apply(output_ds, ...)`` for analysis.
 
-See the offline tests under ``tests/pr/`` (e.g. ``test_xarray_mask.py``,
+See :doc:`xarray_mask_tutorial` for a step-by-step notebook, and the offline
+tests under ``tests/pr/`` (e.g. ``test_xarray_mask.py``,
 ``test_wind_xarraymask_integration.py``) for concrete examples.
 
 Package layout note
