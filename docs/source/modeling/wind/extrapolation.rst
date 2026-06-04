@@ -110,12 +110,12 @@ can restrict the region with ``xs`` and ``ys``; see :doc:`/modeling/wind/index`
     )
 
 
-Step 5: Estimate Wind Turbine Capacity Factor (CF) using the interpolation model
+Step 5: Estimate Wind Turbine Capacity Factor (CF) using the extrapolation model
 --------------------------------------------------------------------------------
 
 Geodata also supports a limited set of wind turbine models to estimate the capacity
 factor (CF) of a wind turbine directly. To get a list of available wind turbine models,
-you can use the `get_available_windturbines` function:
+you can use the ``get_available_windturbines`` function:
 
 .. code:: Python
 
@@ -125,23 +125,36 @@ you can use the `get_available_windturbines` function:
     print(turbines)  # List of available wind turbine configurations
 
 
-To estimate the capacity factor of a wind turbine, you can use the `estimate` method
-and passign in the `turbine` parameter with the name of the wind turbine model.
+Pass the YAML **stem** (filename without ``.yaml``) as ``turbine`` — for example
+``Vestas_V112_3MW`` for ``src/geodata/resources/windturbine/Vestas_V112_3MW.yaml``.
 
 .. code:: Python
 
-    # Estimate the capacity factor for a specific wind turbine model
-    estimated_cf: xr.Dataset = model.estimate(
-        turbine="Vestas_V112_3MW",  # Example wind turbine model
+    estimated_cf = model.estimate(
+        turbine="Vestas_V112_3MW",
         years=slice(2006, 2006),
         months=slice(1, 1),
     )
 
-    print(estimated_cf)  # Display the estimated capacity factor
+    print(estimated_cf)
 
+Understanding the output
+~~~~~~~~~~~~~~~~~~~~~~
 
-The output will be an xarray Dataset containing the estimated capacity factor values
-for the specified wind turbine model over the given time period and region.
+``estimate(turbine=...)`` returns an ``xarray.DataArray`` named ``cf`` with dimensions
+``(time, x, y)`` when those coordinates are present.
+
+The CF pipeline is the same as for the interpolation model (see
+:doc:`interpolation` Step 5 — **Understanding the output**): hub-height wind speed at
+the turbine's ``HUB_HEIGHT`` from the YAML, power from the ``V`` / ``POW`` curve, then
+``cf = power / P`` (rated power = maximum ``POW``).
+
+The only difference is how **hub-height wind** is obtained: this extrapolation model
+derives it from MERRA2 surface and low-level winds (see `How the Extrapolation Model
+Works`_ below) instead of ERA5 3D spline interpolation.
+
+For implementation details, see ``WindBaseModel._estimate_power`` in the
+:ref:`API reference <modindex>`.
 
 
 How the Extrapolation Model Works

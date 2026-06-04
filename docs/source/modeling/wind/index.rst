@@ -118,7 +118,10 @@ Wind-specific arguments
 Pass **either**:
 
 - ``height=<meters>`` — hub-height or AGL wind speed (interpolation or extrapolation), or
-- ``turbine="<name>"`` — capacity factor using a turbine YAML from ``geodata.resources.windturbine`` (see :doc:`interpolation` Step 5).
+- ``turbine="<name>"`` — capacity factor (``cf``) from a turbine YAML under
+  ``geodata.resources.windturbine``. The name is the YAML stem (e.g.
+  ``Vestas_V112_3MW``). See :doc:`interpolation` Step 5 for usage and what
+  ``cf`` represents.
 
 List available turbines with ``geodata.resource.get_available_windturbines()``.
 

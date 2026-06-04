@@ -64,7 +64,7 @@ documented until explicitly deprecated.
 |-----|--------|----------|--------|
 | `intro.rst` teaches legacy Cutout/convert as the main story | New users miss models + `XarrayMask` | P0 | **Done** — modern intro on homepage; legacy moved to `legacy/workflow.rst` |
 | Modeling pages missing recent API options (`compact_output`, flexible `xs`/`ys`) | Docs diverge from `src` | P0 | **Done** — see modeling/wind/index and modeling/pvlib/index |
-| Wind capacity-factor internals not in wind toctree | Deep-dive exists only in source/comments | P1 | Open |
+| Wind capacity-factor internals not in wind toctree | Deep-dive exists only in source/comments | P1 | **Done (Option A)** — “Understanding the output” in interpolation/extrapolation Step 5 |
 | `xarray_mask_tutorial.ipynb` referenced by `xarray_mask_workflow.rst` but may be missing from tree | Broken `:doc:` link | P0 | **Done** — notebook added under `mask/` |
 | Mask section mixes user tutorials with `mask_xarray_migration_plan.md` | Hard to tell “how-to” vs “plan” | P1 | Open |
 | `development/offline-era5-fixture-datasets.md` not linked from modeling tutorials | Readers assume CDS required | P1 | Partial — linked from new intro |
@@ -90,7 +90,7 @@ Geodata docs
 │   ├── MERRA2
 │   └── Weather data config reference
 ├── Modeling
-│   ├── Wind (index + interpolation + extrapolation + CF deep-dive)
+│   ├── Wind (index + interpolation + extrapolation; CF notes in Step 5)
 │   └── PVLib (index + future subpages)
 ├── Masking
 │   ├── Create masks (mask_creation_workflow.ipynb)
@@ -114,7 +114,7 @@ Use four doc types consistently:
 | **Tutorial** | Learning-oriented, step-by-step | Notebooks, `modeling/wind/interpolation.rst` |
 | **How-to guide** | Goal-oriented recipe | `xarray_mask_workflow.rst`, ERA5 CDS setup |
 | **Reference** | Accurate, complete | autoapi, `weather_data_config.md`, turbine YAML lists |
-| **Explanation** | Concepts and design | `capacity_factor_calculation.md`, migration plans |
+| **Explanation** | Concepts and design | migration plans, wind CF summary in interpolation Step 5 |
 
 Label migration/plan documents at the top:
 
@@ -133,7 +133,7 @@ be updated first when behavior changes.
 |--------------------|-------------|-----------------|
 | `datasets/_base.py`, `datasets/era5/*`, `datasets/merra2/*` | `datasets/overview.rst`, dataset-specific pages | autoapi |
 | `datasets/era5/fixture.py` (`*_test`) | `development/offline-era5-fixture-datasets.md` | modeling tutorials (offline note) |
-| `model/wind/*` | `modeling/wind/index.rst`, `interpolation.rst`, `extrapolation.rst` | `capacity_factor_calculation.md` (explanation) |
+| `model/wind/*` | `modeling/wind/index.rst`, `interpolation.rst`, `extrapolation.rst` | autoapi |
 | `model/pvlib/_base.py` | `modeling/pvlib/index.rst` | autoapi |
 | `model/_base.py` (slice sel, I/O) | modeling pages (bounding box sections) | autoapi |
 | `mask.py` (legacy Mask) | `mask/mask_creation_workflow.ipynb` | autoapi |
@@ -290,7 +290,7 @@ Actionable items in recommended order.
 
 ### P1 — Structure and depth
 
-7. **Add `modeling/wind/capacity_factor_calculation.md`** to wind toctree (explanation layer).
+7. ~~**Wind CF documentation**~~ — **Done (Option A):** expanded Step 5 in interpolation/extrapolation; no separate internals page.
 8. **Reorganize mask toctree intent** — group in index or captions: Create / Apply (Xarray) / Apply (Cutout) / Troubleshoot / Plans.
 9. **`mask/merge_layer_known_issues.md`** — publish under mask with troubleshooting cross-links.
 10. **Link fixture doc from modeling tutorials** — one paragraph + code using `load_dataset("wind_3d_hourly_test")`.
