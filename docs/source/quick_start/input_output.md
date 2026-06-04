@@ -34,14 +34,14 @@ The following outputs are currently supported for climate data:
 
 **Wind**
 
-* Wind generation time-series ([MERRA2 (legacy Cutout)](../legacy/merra2/merra2_outputs.md#wind-generation-time-series), [ERA5](../datasets/era5.rst))
-* Wind speed time-series ([MERRA2 (legacy Cutout)](../legacy/merra2/merra2_outputs.md#wind-speed-time-series), [ERA5](../datasets/era5.rst))
+* Wind generation time-series ([ERA5 model outputs](../datasets/era5_outputs.md#wind-generation-time-series), [ERA5 setup](../datasets/era5.rst))
+* Wind speed time-series ([ERA5 model outputs](../datasets/era5_outputs.md#wind-speed-time-series), [ERA5 setup](../datasets/era5.rst))
 * Wind power density time-series ([MERRA2 only (legacy)](../legacy/merra2/merra2_outputs.md#wind-power-density-time-series))
 
 
 **Solar**
 
-* Solar photovoltaic generation time-series ([ERA5 only](../datasets/era5/era5_outputs.md#solar-photovoltaic-generation-time-series))
+* Solar photovoltaic generation time-series ([ERA5 model outputs](../datasets/era5_outputs.md#solar-photovoltaic-generation-time-series))
 * PV generation time-series ([MERRA2 only (legacy)](../legacy/merra2/merra2_outputs.md#pv-generation-time-series))
 
 

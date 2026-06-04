@@ -47,6 +47,7 @@ Welcome to Geodata's documentation!
    mask/mask_creation_workflow
    mask/xarray_mask_tutorial
    mask/mask_troubleshoot
+   mask/merge_layer_known_issues
 
 .. .. toctree::
 ..    :maxdepth: 1

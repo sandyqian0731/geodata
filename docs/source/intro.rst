@@ -101,7 +101,7 @@ factor from ERA5 3D wind data:
    model.prepare()
    wind_speed = model.estimate(height=100.0)
 
-See :doc:`modeling/wind/index` for interpolation, extrapolation, and
+See :doc:`modeling/wind/index` for wind interpolation and turbine capacity factor, and
 turbine capacity-factor details.
 
 **Solar PV** — estimate AC power and capacity factor with pvlib-backed

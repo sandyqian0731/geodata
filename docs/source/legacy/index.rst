@@ -22,3 +22,4 @@ For the recommended path, see the :doc:`documentation homepage </index>`.
    merra2/merra2_download
    merra2/merra2_outputs
    merra2/merra2
+   wind_extrapolation
