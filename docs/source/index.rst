@@ -17,13 +17,18 @@ Welcome to Geodata's documentation!
    quick_start/input_output
 
 .. toctree::
-   :caption: Dataset Specific Tutorials
+   :maxdepth: 1
+   :caption: Legacy workflow
+   :hidden:
+
+   legacy/index
+
+.. toctree::
+   :caption: Datasets
    :maxdepth: 1
    :glob:
    :hidden:
 
-   datasets/era5/index
-   datasets/merra2/index
    datasets/*
 
 .. toctree::
@@ -31,16 +36,19 @@ Welcome to Geodata's documentation!
    :caption: Modeling
    :hidden:
 
+   modeling/era5_outputs
    modeling/wind/index
    modeling/pvlib/index
 
 .. toctree::
    :maxdepth: 1
    :caption: Mask
-   :glob:
    :hidden:
 
-   mask/*
+   mask/mask_creation_workflow
+   mask/xarray_mask_tutorial
+   mask/mask_troubleshoot
+   mask/merge_layer_known_issues
 
 .. .. toctree::
 ..    :maxdepth: 1
@@ -70,7 +78,10 @@ Welcome to Geodata's documentation!
    :caption: Development
    :hidden:
 
+   development/documentation-organization-plan
    development/offline-era5-fixture-datasets
+   development/mask_xarray_migration_plan
+   development/xarray_mask_workflow
 
 .. toctree::
    :maxdepth: 1

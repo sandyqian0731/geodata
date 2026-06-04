@@ -1,5 +1,10 @@
 # Mask-Without-Cutout Migration Plan
 
+```{note}
+**Audience:** contributors and maintainers. For applying saved masks to model
+output, see [XarrayMask tutorial](../mask/xarray_mask_tutorial.ipynb).
+```
+
 ## Goal
 
 Replace Cutout-dependent masking with a direct xarray-based workflow:

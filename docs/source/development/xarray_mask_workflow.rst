@@ -1,6 +1,12 @@
 Xarray masking workflow
 =========================
 
+.. note::
+
+   **Audience:** contributors and maintainers. This page records the xarray-first
+   masking implementation phases. For usage, see
+   :doc:`/mask/xarray_mask_tutorial`.
+
 This page summarizes the **xarray-first masking** work added alongside the
 longer-term plan in :doc:`mask_xarray_migration_plan`. The legacy path based on
 ``Cutout`` (``add_mask``, ``add_grid_area``, ``mask``) is unchanged for now; the
@@ -57,7 +63,7 @@ APIs. The intended usage is:
 2. Build ``XarrayMask.from_name("my_mask", grid=output_ds, mask_dir=...)`` if needed.
 3. Call ``attach(output_ds)`` or ``apply(output_ds, ...)`` for analysis.
 
-See :doc:`xarray_mask_tutorial` for a step-by-step notebook, and the offline
+See :doc:`/mask/xarray_mask_tutorial` for a step-by-step notebook, and the offline
 tests under ``tests/pr/`` (e.g. ``test_xarray_mask.py``,
 ``test_wind_xarraymask_integration.py``) for concrete examples.
 
@@ -77,6 +83,7 @@ continue to work during this transition.
 See also
 --------
 
+* :doc:`/mask/xarray_mask_tutorial` — step-by-step notebook (offline runnable).
 * :doc:`mask_xarray_migration_plan` — full migration phases and deprecation plan.
-* :doc:`mask_on_cutout` — legacy notebook: masks via ``Cutout``.
-* :doc:`mask_creation_workflow` — building and saving ``Mask`` objects from rasters.
+* :doc:`/legacy/mask_on_cutout` — legacy notebook: masks via ``Cutout``.
+* :doc:`/mask/mask_creation_workflow` — building and saving ``Mask`` objects from rasters.
