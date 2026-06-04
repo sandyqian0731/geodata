@@ -42,10 +42,11 @@ Welcome to Geodata's documentation!
 .. toctree::
    :maxdepth: 1
    :caption: Mask
-   :glob:
    :hidden:
 
-   mask/*
+   mask/mask_creation_workflow
+   mask/xarray_mask_tutorial
+   mask/mask_troubleshoot
 
 .. .. toctree::
 ..    :maxdepth: 1
@@ -77,6 +78,8 @@ Welcome to Geodata's documentation!
 
    development/documentation-organization-plan
    development/offline-era5-fixture-datasets
+   development/mask_xarray_migration_plan
+   development/xarray_mask_workflow
 
 .. toctree::
    :maxdepth: 1

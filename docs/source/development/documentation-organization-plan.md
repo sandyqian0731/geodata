@@ -66,7 +66,7 @@ documented until explicitly deprecated.
 | Modeling pages missing recent API options (`compact_output`, flexible `xs`/`ys`) | Docs diverge from `src` | P0 | **Done** — see modeling/wind/index and modeling/pvlib/index |
 | Wind capacity-factor internals not in wind toctree | Deep-dive exists only in source/comments | P1 | **Done (Option A)** — “Understanding the output” in interpolation/extrapolation Step 5 |
 | `xarray_mask_tutorial.ipynb` referenced by `xarray_mask_workflow.rst` but may be missing from tree | Broken `:doc:` link | P0 | **Done** — notebook added under `mask/` |
-| Mask section mixes user tutorials with `mask_xarray_migration_plan.md` | Hard to tell “how-to” vs “plan” | P1 | Open |
+| Mask section mixes user tutorials with `mask_xarray_migration_plan.md` | Hard to tell “how-to” vs “plan” | P1 | **Done** — plans moved to `development/` |
 | `development/offline-era5-fixture-datasets.md` not linked from modeling tutorials | Readers assume CDS required | P1 | Partial — linked from new intro |
 | Example scripts in `docs/source/mask/*.py` not classified | Unclear if maintained or one-off | P2 | Open |
 | README points to placeholder doc URL | External discoverability | P2 | Open |
@@ -94,14 +94,15 @@ Geodata docs
 │   └── PVLib (index + future subpages)
 ├── Masking
 │   ├── Create masks (mask_creation_workflow.ipynb)
-│   ├── Apply with Cutout (legacy notebook)
-│   ├── Apply with XarrayMask (workflow.rst + tutorial.ipynb)
-│   └── Troubleshooting
+│   ├── Apply with XarrayMask (xarray_mask_tutorial.ipynb)
+│   ├── Troubleshoot (mask_troubleshoot.md)
+│   └── Cutout apply → legacy/mask_on_cutout
 ├── Visualization
 ├── Development (contributors)
 │   ├── Documentation organization (this file)
 │   ├── Offline ERA5 fixtures
-│   └── Internal migration plans (mask xarray plan, etc.)
+│   ├── mask_xarray_migration_plan
+│   └── xarray_mask_workflow (implementation notes)
 └── API reference (autoapi)
 ```
 
@@ -112,14 +113,14 @@ Use four doc types consistently:
 | Type | Purpose | Examples |
 |------|---------|----------|
 | **Tutorial** | Learning-oriented, step-by-step | Notebooks, `modeling/wind/interpolation.rst` |
-| **How-to guide** | Goal-oriented recipe | `xarray_mask_workflow.rst`, ERA5 CDS setup |
+| **How-to guide** | Goal-oriented recipe | `xarray_mask_tutorial.ipynb`, ERA5 CDS setup |
 | **Reference** | Accurate, complete | autoapi, `weather_data_config.md`, turbine YAML lists |
 | **Explanation** | Concepts and design | migration plans, wind CF summary in interpolation Step 5 |
 
 Label migration/plan documents at the top:
 
 ```markdown
-> **Audience:** contributors and maintainers. For usage, see [Xarray masking workflow](../mask/xarray_mask_workflow.rst).
+> **Audience:** contributors and maintainers. For usage, see [XarrayMask tutorial](../mask/xarray_mask_tutorial.ipynb).
 ```
 
 ---
@@ -138,7 +139,7 @@ be updated first when behavior changes.
 | `model/pvlib/_base.py` | `modeling/pvlib/index.rst` | autoapi |
 | `model/_base.py` (slice sel, I/O) | modeling pages (bounding box sections) | autoapi |
 | `mask.py` (legacy Mask) | `mask/mask_creation_workflow.ipynb` | autoapi |
-| `mask/xarray_mask.py`, `mask/spatial.py` | `mask/xarray_mask_workflow.rst`, tutorial notebook | autoapi |
+| `mask/xarray_mask.py`, `mask/spatial.py` | `mask/xarray_mask_tutorial.ipynb` | `development/xarray_mask_workflow.rst` (contributors) |
 | `cutout.py`, `convert.py`, `preparation.py` | `legacy/workflow.rst` | autoapi |
 | Cutout-based masking | `legacy/mask_on_cutout.ipynb` | — |
 | `plot.py` | `visualization/visualization.ipynb` | autoapi |
@@ -181,7 +182,7 @@ When adding or removing symbols from `geodata.__all__`:
 ### 5.3 Naming
 
 - User-facing: `snake_case` or `kebab-case` descriptive names
-  (`xarray_mask_workflow.rst`, `mask_troubleshoot.md`).
+  (`xarray_mask_tutorial.ipynb`, `mask_troubleshoot.md`).
 - Plans: suffix or folder under `development/` (`*_plan.md`, `*_known_issues.md`).
 - Example scripts: `docs/source/<topic>/examples/` (proposed) — not mixed with
   built pages unless listed in toctree.
@@ -293,7 +294,7 @@ Actionable items in recommended order.
 ### P1 — Structure and depth
 
 7. ~~**Wind CF documentation**~~ — **Done (Option A):** expanded Step 5 in interpolation/extrapolation; no separate internals page.
-8. **Reorganize mask toctree intent** — group in index or captions: Create / Apply (Xarray) / Apply (Cutout) / Troubleshoot / Plans.
+8. ~~**Reorganize mask toctree intent**~~ — **Done:** Mask = creation + apply tutorials + troubleshoot; plans under Development.
 9. **`mask/merge_layer_known_issues.md`** — publish under mask with troubleshooting cross-links.
 10. **Link fixture doc from modeling tutorials** — one paragraph + code using `load_dataset("wind_3d_hourly_test")`.
 

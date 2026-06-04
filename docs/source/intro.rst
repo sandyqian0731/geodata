@@ -137,7 +137,7 @@ output without a ``Cutout``, use ``XarrayMask``:
    xmask = XarrayMask.from_name("my_mask", grid=wind_speed)
    masked = xmask.apply(wind_speed, mode="where")
 
-See :doc:`mask/xarray_mask_workflow` for ``attach``, ``apply``, and
+See :doc:`mask/xarray_mask_tutorial` for ``attach``, ``apply``, and
 grid-area weighting.
 
 Step 4: Visualize
