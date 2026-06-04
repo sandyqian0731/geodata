@@ -65,7 +65,7 @@ documented until explicitly deprecated.
 | `intro.rst` teaches legacy Cutout/convert as the main story | New users miss models + `XarrayMask` | P0 | **Done** — modern intro on homepage; legacy moved to `legacy/workflow.rst` |
 | Modeling pages missing recent API options (`compact_output`, flexible `xs`/`ys`) | Docs diverge from `src` | P0 | **Done** — see modeling/wind/index and modeling/pvlib/index |
 | Wind capacity-factor internals not in wind toctree | Deep-dive exists only in source/comments | P1 | Open |
-| `xarray_mask_tutorial.ipynb` referenced by `xarray_mask_workflow.rst` but may be missing from tree | Broken `:doc:` link | P0 | Open |
+| `xarray_mask_tutorial.ipynb` referenced by `xarray_mask_workflow.rst` but may be missing from tree | Broken `:doc:` link | P0 | **Done** — notebook added under `mask/` |
 | Mask section mixes user tutorials with `mask_xarray_migration_plan.md` | Hard to tell “how-to” vs “plan” | P1 | Open |
 | `development/offline-era5-fixture-datasets.md` not linked from modeling tutorials | Readers assume CDS required | P1 | Partial — linked from new intro |
 | Example scripts in `docs/source/mask/*.py` not classified | Unclear if maintained or one-off | P2 | Open |
@@ -279,7 +279,7 @@ Actionable items in recommended order.
 ### P0 — Navigation and broken links
 
 1. ~~**Add workflow chooser**~~ — **Done:** homepage (`intro.rst`) is the modern workflow; legacy content lives under **Legacy workflow** (`legacy/workflow.rst`).
-2. **Ensure `xarray_mask_tutorial.ipynb` exists** and is in the mask toctree (referenced from `xarray_mask_workflow.rst`).
+2. ~~**Ensure `xarray_mask_tutorial.ipynb` exists**~~ — **Done** (`docs/source/mask/xarray_mask_tutorial.ipynb`, included via mask `*` toctree).
 3. ~~**Update `intro.rst` masking section**~~ — **Done:** modern intro uses `XarrayMask`; Cutout masking unchanged in `legacy/workflow.rst`.
 
 ### P0 — Sync with recent source changes
