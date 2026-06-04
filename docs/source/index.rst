@@ -36,6 +36,7 @@ Welcome to Geodata's documentation!
    :caption: Modeling
    :hidden:
 
+   modeling/era5_outputs
    modeling/wind/index
    modeling/pvlib/index
 
