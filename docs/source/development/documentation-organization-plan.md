@@ -67,7 +67,7 @@ documented until explicitly deprecated.
 | Wind capacity-factor internals not in wind toctree | Deep-dive exists only in source/comments | P1 | **Done (Option A)** — “Understanding the output” in interpolation/extrapolation Step 5 |
 | `xarray_mask_tutorial.ipynb` referenced by `xarray_mask_workflow.rst` but may be missing from tree | Broken `:doc:` link | P0 | **Done** — notebook added under `mask/` |
 | Mask section mixes user tutorials with `mask_xarray_migration_plan.md` | Hard to tell “how-to” vs “plan” | P1 | **Done** — plans moved to `development/` |
-| `development/offline-era5-fixture-datasets.md` not linked from modeling tutorials | Readers assume CDS required | P1 | Partial — linked from new intro |
+| `development/offline-era5-fixture-datasets.md` not linked from modeling tutorials | Readers assume CDS required | P1 | **Done** — overview + era5 + intro link fixtures |
 | Example scripts in `docs/source/mask/*.py` not classified | Unclear if maintained or one-off | P2 | Open |
 | README points to placeholder doc URL | External discoverability | P2 | Open |
 
@@ -289,7 +289,7 @@ Actionable items in recommended order.
 
 4. ~~**`modeling/pvlib/index.rst`** — document `compact_output`~~ — **Done**.
 5. ~~**`modeling/wind/index.rst` and interpolation.rst** — document flexible `xs`/`ys`~~ — **Done**.
-6. **`datasets/era5.rst`** — clarify CDS download vs offline fixtures; point to `development/offline-era5-fixture-datasets.md`.
+6. ~~**`datasets/era5.rst`** — clarify CDS download vs offline fixtures~~ — **Done:** overview has recommended download; era5.rst covers CDS setup + optional cdsapi verify.
 
 ### P1 — Structure and depth
 
