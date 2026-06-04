@@ -2,13 +2,23 @@ Legacy workflow
 ===============
 
 The pages below document the original Geodata API built around
-``Dataset``, ``Cutout``, ``geodata.convert``, and Cutout-based masking.
-This path remains available for existing analyses.
+``Dataset``, ``Cutout``, ``geodata.convert``, and Cutout-based masking,
+including MERRA2 download and cutout tutorials.
 
-For the current recommended workflow, see the :doc:`documentation homepage </index>`.
+.. note::
+
+   This path is **not** part of the current tested workflow
+   (``load_dataset`` → models → ``XarrayMask``). It remains available for
+   existing analyses and reference.
+
+For the recommended path, see the :doc:`documentation homepage </index>`.
 
 .. toctree::
    :maxdepth: 1
 
    workflow
-   ../mask/mask_on_cutout
+   mask_on_cutout
+   merra2/index
+   merra2/merra2_download
+   merra2/merra2_outputs
+   merra2/merra2

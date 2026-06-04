@@ -9,12 +9,9 @@ data formats, handling metadata, and performing common geospatial operations.
 Key Features
 ------------
 
-- Supports the download and management of datasets from various sources, such as
-  `ERA5 <https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5>`_ and
-  `MERRA2 <https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/>`_.
+- Supports the download and management of **ERA5** datasets via ``load_dataset`` (see :doc:`era5`).
 
-- Provides a consistent API for accessing geospatial data, regardless of the underlying
-  data source.
+- **MERRA2** remains in the codebase but is documented under :doc:`/legacy/index` (legacy ``Dataset`` / ``Cutout`` path, not part of the current tested workflow).
 
 Typical Usage
 -------------

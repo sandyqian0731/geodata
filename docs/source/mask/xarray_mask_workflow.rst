@@ -79,5 +79,5 @@ See also
 
 * :doc:`xarray_mask_tutorial` — step-by-step notebook (offline runnable).
 * :doc:`mask_xarray_migration_plan` — full migration phases and deprecation plan.
-* :doc:`mask_on_cutout` — legacy notebook: masks via ``Cutout``.
+* :doc:`/legacy/mask_on_cutout` — legacy notebook: masks via ``Cutout``.
 * :doc:`mask_creation_workflow` — building and saving ``Mask`` objects from rasters.

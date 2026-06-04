@@ -45,9 +45,10 @@ The recommended workflow follows four steps:
 4. **Analyze or visualize** the results in xarray, pandas, or with
    ``geodata.plot``.
 
-Geodata supports ERA5 and MERRA-2 reanalysis products and common GIS
-formats (see :doc:`quick_start/input_output`). For dataset-specific
-download setup and available configs, see :doc:`datasets/overview`.
+Geodata supports ERA5 reanalysis through ``load_dataset`` and common GIS
+formats (see :doc:`quick_start/input_output`). For dataset setup and configs,
+see :doc:`datasets/overview`. MERRA-2 cutout workflows are documented under
+:doc:`/legacy/index`.
 
 .. note::
 

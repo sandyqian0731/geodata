@@ -24,13 +24,11 @@ Welcome to Geodata's documentation!
    legacy/index
 
 .. toctree::
-   :caption: Dataset Specific Tutorials
+   :caption: Datasets
    :maxdepth: 1
    :glob:
    :hidden:
 
-   datasets/era5/index
-   datasets/merra2/index
    datasets/*
 
 .. toctree::

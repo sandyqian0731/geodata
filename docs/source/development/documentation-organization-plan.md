@@ -131,14 +131,16 @@ be updated first when behavior changes.
 
 | `src/geodata` area | Primary doc | Secondary / API |
 |--------------------|-------------|-----------------|
-| `datasets/_base.py`, `datasets/era5/*`, `datasets/merra2/*` | `datasets/overview.rst`, dataset-specific pages | autoapi |
+| `datasets/_base.py`, `datasets/era5/*` | `datasets/overview.rst`, `datasets/era5.rst` | autoapi |
+| `datasets/merra2/*` (legacy) | `legacy/merra2/*` | autoapi |
 | `datasets/era5/fixture.py` (`*_test`) | `development/offline-era5-fixture-datasets.md` | modeling tutorials (offline note) |
 | `model/wind/*` | `modeling/wind/index.rst`, `interpolation.rst`, `extrapolation.rst` | autoapi |
 | `model/pvlib/_base.py` | `modeling/pvlib/index.rst` | autoapi |
 | `model/_base.py` (slice sel, I/O) | modeling pages (bounding box sections) | autoapi |
 | `mask.py` (legacy Mask) | `mask/mask_creation_workflow.ipynb` | autoapi |
 | `mask/xarray_mask.py`, `mask/spatial.py` | `mask/xarray_mask_workflow.rst`, tutorial notebook | autoapi |
-| `cutout.py`, `convert.py`, `preparation.py` | `intro.rst` (legacy section), `mask/mask_on_cutout.ipynb` | autoapi |
+| `cutout.py`, `convert.py`, `preparation.py` | `legacy/workflow.rst` | autoapi |
+| Cutout-based masking | `legacy/mask_on_cutout.ipynb` | — |
 | `plot.py` | `visualization/visualization.ipynb` | autoapi |
 | `resource.py`, `resources/*` | modeling pages (turbine/panel names) | — |
 | `config.py` | `quick_start/packagesetup.md` | — |
