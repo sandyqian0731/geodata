@@ -107,11 +107,10 @@ def calculate_ghi(
             "Check that your xs and ys values (in degrees) overlap with these coordinate ranges."
         )
 
-    # TODO: check if zenith is in degrees or radians and convert to radians if needed
-    # it is processed from get_solarposition()
-    # if zenith is in degrees, convert to radians
-    if np.max(zenith_vals) > np.pi * 2:
-        zenith_vals = np.deg2rad(zenith_vals)
+    # zenith comes from calculate_pvlib_solarposition(), which wraps
+    # pvlib.solarposition.get_solarposition() -- pvlib documents this as
+    # always returning angles in degrees, so the conversion is unconditional.
+    zenith_vals = np.deg2rad(zenith_vals)
 
     ghi = np.clip(
         dhi + dni * np.cos(zenith_vals),
@@ -248,3 +247,61 @@ def convert_kelvin_to_celsius(
         A temperature in Celsius [C].
     """
     return ds - 273.15
+
+
+def latitude_optimal_orientation(lat: float) -> dict:
+    """
+    Recommends a fixed ``surface_tilt``/``surface_azimuth`` pair (in the
+    degrees convention expected by :code:`pvlib.pvsystem.PVSystem`) for a
+    latitude-optimal, equator-facing panel.
+
+    Tilt follows the same rule-of-thumb piecewise fit used elsewhere in
+    geodata's (legacy) orientation code and in gsee [1]_: below 25 degrees
+    of absolute latitude, tilt scales at 0.87x latitude; between 25 and 50
+    degrees, at 0.76x latitude plus 0.31 degrees; above 50 degrees, a flat
+    40 degrees. Unlike that legacy implementation
+    (:code:`geodata.pv.orientation.make_latitude_optimal`), this works for
+    both hemispheres: a panel should face the equator, so ``azimuth`` is
+    180 (south-facing) in the northern hemisphere but 0 (north-facing) in
+    the southern hemisphere -- the legacy function instead raises
+    ``NotImplementedError`` for any negative latitude.
+
+    This single tilt/azimuth pair is meant for callers that need one
+    representative orientation for a whole :code:`pvlib.pvsystem.PVSystem`
+    (see :code:`Pvlib.init_pv_system()`), which applies uniformly to every
+    coordinate processed in one :code:`Pvlib.estimate()` call. It is only
+    a good approximation for a run whose bounding box sits within a single
+    hemisphere; a bounding box straddling the equator (e.g. Indonesia)
+    should be split into per-hemisphere (or per-province) runs, each
+    calling this function with its own representative latitude, rather
+    than averaging across the equator.
+
+    References
+    ----------
+    .. [1] https://github.com/renewables-ninja/gsee/blob/master/gsee/pv.py
+
+    Parameters
+    ----------
+    lat : float
+        Latitude in decimal degrees. Positive for the northern hemisphere,
+        negative for the southern hemisphere.
+
+    Returns
+    -------
+    orientation : dict
+        Dictionary with ``surface_tilt`` and ``surface_azimuth`` in
+        decimal degrees, ready to pass as keyword arguments to
+        :code:`Pvlib.init_pv_system()`.
+    """
+    abs_lat = abs(lat)
+
+    if abs_lat <= 25:
+        tilt = 0.87 * abs_lat
+    elif abs_lat <= 50:
+        tilt = 0.76 * abs_lat + 0.31
+    else:
+        tilt = 40.0
+
+    azimuth = 180.0 if lat >= 0 else 0.0
+
+    return {"surface_tilt": tilt, "surface_azimuth": azimuth}

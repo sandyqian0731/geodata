@@ -87,6 +87,48 @@ prepare step; only wind models do.
     # After changing the source time range or domain:
     # model.prepare(force=True)
 
+How caching works internally (``geodata.model.results``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``prepare()`` writes one cached file per day (or per month, depending on the
+model's ``frequency``) under
+``GEODATA_ROOT/models/<dataset module>/<ModelClassName>/<year>/<month>/``,
+plus a ``meta.json`` recording a SHA-256 hash of every file written. This is
+implemented by :code:`geodata.model.results` (``DailyModelResult`` /
+``MonthlyModelResult``), which both ``model.prepared`` and ``model.prepare()``
+delegate to.
+
+The cache key is only **(dataset module, model class, year, month)** — it does
+**not** include turbine, panel, or other ``estimate()`` arguments. This is
+intentional: ``prepare()`` only computes the reusable interpolation
+coefficients from the source weather data; turbine/panel-specific conversion
+happens later in ``estimate()``. So switching ``turbine=`` between calls does
+**not** require re-running ``prepare()`` — but changing the *source* dataset
+(different years/months/bounds, or re-downloaded raw files) does, via
+``force=True``.
+
+By default (``quick_check=False``, the model constructor's default), checking
+``model.prepared`` recomputes the SHA-256 hash of every cached file and
+compares it against the hash recorded at prepare-time — this catches
+silently truncated or manually edited cache files, but means the check itself
+gets slower the more months/files you have cached (relevant once you're
+running a decade of data across multiple countries). Pass
+``quick_check=True`` to the model constructor to only check that the expected
+files *exist*, skipping the hash comparison — much faster for repeated batch
+resubmissions once you've already validated a run's integrity once, at the
+cost of not detecting corrupted cache files.
+
+.. code:: Python
+
+    # Skip expensive hash verification on every `prepared` check —
+    # useful once a run's cache has already been validated.
+    model = WindInterpolationModel(ds, quick_check=True)
+
+Pvlib does **not** go through any of this: :code:`Pvlib.prepare()` is a
+no-op and :code:`Pvlib.prepared` always returns ``True`` (see
+:doc:`/modeling/pvlib/index`). Every call to ``Pvlib.estimate()`` re-reads
+the raw source files and recomputes from scratch — there is no cross-run
+caching for the solar model.
 
 Once the model is prepared, we can use it to estimate wind speed at desired heights.
 

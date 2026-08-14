@@ -20,8 +20,13 @@ GEODATA
 
 Geospatial Data Collection and "Pre-Analysis" Tools
 
-TODO: Documentation here
-
+Implements the ``Pvlib`` model (``geodata.model.pvlib.Pvlib``), which wraps
+``pvlib.modelchain.ModelChain`` to estimate PV capacity factors from a
+geodata ``wind_solar_hourly``-family dataset. See
+``docs/source/modeling/pvlib/index.rst`` for the user-facing tutorial and
+API usage; this module holds the implementation (per-coordinate
+``ModelChain`` execution, optional multiprocessing across grid cells, and
+the weather-data preparation helpers in ``calculations.py``).
 """
 import os
 import platform

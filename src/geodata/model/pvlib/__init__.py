@@ -14,5 +14,6 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 from ._base import Pvlib
+from .calculations import latitude_optimal_orientation
 
-__all__ = ["Pvlib"]
+__all__ = ["Pvlib", "latitude_optimal_orientation"]

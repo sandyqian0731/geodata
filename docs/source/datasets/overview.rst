@@ -11,7 +11,20 @@ Key Features
 
 - Supports the download and management of **ERA5** datasets via ``load_dataset`` (see :doc:`era5` for CDS account setup).
 
-- **MERRA2** remains in the codebase but is documented under :doc:`/legacy/index` (legacy ``Dataset`` / ``Cutout`` path, not part of the current tested workflow).
+- **MERRA2** remains in the codebase in two forms: the original ``Dataset``/``Cutout``-based
+  path, documented under :doc:`/legacy/index`; and a newer, registered
+  ``geodata.datasets.merra2`` submodule (split into ``daily``/``hourly``/``monthly``,
+  mirroring the ``era5`` restructure) that has **no documentation of its own** — the
+  legacy MERRA2 tutorials describe the old API, not this one. Like HRRR above, this
+  project does not use MERRA2 for any of the four target countries; ERA5 is the sole
+  weather source for consistency across China, USA, Indonesia, and Vietnam.
+
+- **HRRR** (``geodata.datasets.hrrr``, via `Herbie <https://herbie.readthedocs.io/>`_) is
+  present in the codebase as a higher-resolution, US-only alternative to ERA5, but it has
+  **no test coverage and no further documentation beyond this note** — treat it as
+  experimental. It is not used anywhere in this project's pipeline: all four target
+  countries (China, USA, Indonesia, Vietnam) are generated from ERA5 for a consistent
+  data source and methodology across countries, including for the USA.
 
 Typical Usage
 -------------

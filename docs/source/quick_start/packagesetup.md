@@ -2,9 +2,20 @@
 
 This guide covers how to install and configure the **geodata** package for local and cloud use.
 
+```{important}
+This documentation describes the **`data-pvlib-integration`** branch of geodata
+(hosted at [KULcoder/geodata](https://github.com/KULcoder/geodata/tree/data-pvlib-integration),
+not yet merged into [GeodataTools/geodata](https://github.com/GeodataTools/geodata)).
+It adds features the upstream `master` branch does not have — the `pvlib`-based
+solar model (`geodata.model.pvlib`), the `geodata.mask` module, and the
+restructured `datasets/era5`, `datasets/merra2`, `datasets/hrrr` packages.
+**Installing from `GeodataTools/geodata` (master) instead of this branch will
+silently give you a package missing all of these.**
+```
+
 Make sure that you have the following **required** software set up:
 
-* [Python 3](https://www.python.org/downloads/)
+* [Python 3.10+](https://www.python.org/downloads/) (this branch's `pyproject.toml` requires `python>=3.10`)
 
 * Package Management System
   - [conda](https://docs.conda.io/projects/conda/en/latest/) (miniconda or anaconda)
@@ -12,10 +23,29 @@ Make sure that you have the following **required** software set up:
 
 ## Downloading Geodata
 
-To download **geodata**, open a terminal/shell window navigate to your preferred working directory, and run the following: (If you do not have Git installed, you may also directly download it with this [link](https://github.com/GeodataTools/geodata/archive/refs/heads/master.zip).
+### Option A: install directly with pip (no local clone)
+
+If you don't need to edit geodata's source, install this branch straight from GitHub into
+your active environment:
 
 ```bash
-git clone https://github.com/GeodataTools/geodata.git
+pip install --force-reinstall "geodata @ git+https://github.com/KULcoder/geodata.git@data-pvlib-integration"
+```
+
+This is the install command used by the lab's own [RE Profiles End-to-End
+Workflow](https://docs.google.com/document/u/3/d/1rWgo6mjNRm7zkycCQthHBqQRv1f_NnsRbWBefU3MCSM/edit)
+for generating RE profiles on TSCC, and is the fastest path if you just want to *use* the
+package (e.g. from `geodata_helpers` scripts).
+
+### Option B: clone the repo (for local development)
+
+To download **geodata** for local editing, open a terminal/shell window, navigate to your
+preferred working directory, and run the following. (If you do not have Git installed, you
+may also directly download the branch as a
+[zip archive](https://github.com/KULcoder/geodata/archive/refs/heads/data-pvlib-integration.zip).)
+
+```bash
+git clone -b data-pvlib-integration https://github.com/KULcoder/geodata.git
 cd geodata
 ```
 
@@ -47,15 +77,22 @@ If you do not define this variable, all datasets and cutouts will be stored unde
 
 [Anaconda](https://www.anaconda.com/download)/[miniconda](https://docs.conda.io/en/latest/miniconda.html) is a powerful package manager and environment manager for Windows, macOS or Linux, and it provides easy installation for all operating systems. It is especially convenient if you are building Geodata on the cloud with potential installation permission issues.
 
-If you already have Anaconda/miniconda installed on your machine, jump straight to the `conda activate` step. Otherwise, you have 2 [options](https://conda.io/projects/conda/en/latest/user-guide/install/download.html#anaconda-or-miniconda): download Anaconda or miniconda. Installing Anaconda requires >3GB disk space and takes minutes to download, so we will choose **miniconda** instead because is a small, bootstrap version of Anaconda that includes only conda, Python, the packages they depend on, and a small number of other useful packages.
+If you already have Anaconda/miniconda installed on your machine, jump straight to the `conda env create` step. Otherwise, you have 2 [options](https://conda.io/projects/conda/en/latest/user-guide/install/download.html#anaconda-or-miniconda): download Anaconda or miniconda. Installing Anaconda requires >3GB disk space and takes minutes to download, so we will choose **miniconda** instead because is a small, bootstrap version of Anaconda that includes only conda, Python, the packages they depend on, and a small number of other useful packages.
 
-If you have conda 4.6 or later versions, in the terminal/shell, run the following command below to activate the conda [environment](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#managing-environments).
+From the package's root directory (ie, "geodata", from Option B above), create the environment from
+`environment.yaml` — this installs the GIS-heavy dependencies (`rasterio`, `geopandas`, `pyproj`,
+`libgdal`, ...) via conda-forge, which is more reliable than pip for those packages:
 
 ```bash
+conda env create -f environment.yaml -n <ENVIRONMENT_NAME>
 conda activate <ENVIRONMENT_NAME>
 ```
 
-To use **geodata** in Python scripts by calling `import geodata`, you'll need to build the package.  To do so, in the terminal/shell window, navigate to the package's root directory (ie, "geodata"), and run the following:
+To use **geodata** in Python scripts by calling `import geodata`, you still need to install the
+package itself on top of that environment (`environment.yaml` only installs its dependencies).
+In the terminal/shell window, navigate to the package's root directory (ie, "geodata"), and run
+the following (use `pip install -e .` instead of `pip install .` if you're actively editing the
+source and want changes to take effect without reinstalling):
 
 ```bash
 pip install .

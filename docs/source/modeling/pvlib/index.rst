@@ -73,6 +73,44 @@ Following is an example of how to create the model with specific configs.
         inverter_parameters=inv
     )
 
+.. warning::
+
+    ``surface_tilt``/``surface_azimuth`` above are raw, user-supplied values
+    that :code:`init_pv_system()` passes straight through to
+    :code:`pvlib.pvsystem.PVSystem` -- geodata does **not** infer them from
+    latitude. ``surface_azimuth=180`` points the panel south, which is only
+    correct in the **northern** hemisphere (as in this example, a band of
+    central Europe); a panel installed south of the equator should instead
+    face north (``surface_azimuth=0``). Use
+    :code:`geodata.model.pvlib.latitude_optimal_orientation(lat)` to get a
+    latitude-optimal ``surface_tilt``/``surface_azimuth`` pair that is
+    correct in both hemispheres, e.g.:
+
+    .. code:: Python
+
+        from geodata.model.pvlib import latitude_optimal_orientation
+
+        orientation = latitude_optimal_orientation(lat=-8.5)  # e.g. NTT, Indonesia
+        # {'surface_tilt': 7.4, 'surface_azimuth': 0.0}
+        model.init_pv_system(
+            arrays=None,
+            racking_model='open_rack',
+            module_parameters=module,
+            modules_per_string=n_mods,
+            module_type='glass_polymer',
+            module='Kaneka_U_SA105',
+            strings_per_inverter=n_strings,
+            inverter_parameters=inv,
+            **orientation,
+        )
+
+    Note that one :code:`PVSystem` (and therefore one ``surface_tilt``/
+    ``surface_azimuth`` pair) applies uniformly to **every** coordinate
+    processed by a single :code:`estimate()` call. For a region that
+    straddles the equator (e.g. Indonesia), pick a representative latitude
+    per run and split the run by hemisphere (or by province) rather than
+    averaging latitude across the equator.
+
 .. code:: Python
 
     model.init_model_config(
