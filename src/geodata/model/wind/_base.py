@@ -40,11 +40,10 @@ Example:
 """
 
 import xarray as xr
+from scipy.interpolate import interp1d
 
 from ...resource import get_windturbineconfig
 from .._base import BaseModel
-
-from scipy.interpolate import interp1d
 
 HEIGHTS = {"u50m": 50, "u10m": 10, "u2m": 2}
 
