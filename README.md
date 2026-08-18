@@ -28,7 +28,7 @@ This repository is part of a fork chain:
 
 Building on top of `GeodataTools/geodata`'s core weather-data-to-power-systems-data pipeline, this repository's key functional addition is a **`pvlib`-based solar `ModelChain` model** (`geodata.model.pvlib`) alongside the existing wind model, plus **mask/province-splitting tooling** (`geodata.mask`) for cropping and splitting national-scale output into sub-national (e.g. provincial/state) regions using elevation, slope, and protected-area (WDPA) layers.
 
-Used together with the companion **[`geodata_helpers`](https://github.com/Power-Lab/geodata_helpers)** repository — which holds the per-country configuration (turbine/module/inverter selection, national crop bounds, technology configs) and the driver scripts (`profile_generation`, `profile_split`) that call into this library — this repository enables generating **hourly, province/state-level wind and solar capacity-factor profiles** from ERA5 weather data for a set of target countries (currently China, USA (CONUS), Vietnam, and Indonesia), spanning multiple years, ready for use in downstream power systems modeling.
+Used together with the companion **[`geodata_helpers`](https://github.com/Power-Lab/geodata_helpers)** repository — which holds the per-country configuration (turbine/module/inverter selection, national crop bounds, technology configs) and the driver scripts (`profile_generation`, `profile_split`) that call into this library — this repository enables generating **hourly, province/state-level wind and solar capacity-factor profiles** from ERA5 weather data for a configurable set of target countries, spanning multiple years, ready for use in downstream power systems modeling.
 
 ## Installation
 
