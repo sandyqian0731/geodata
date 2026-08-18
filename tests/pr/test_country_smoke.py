@@ -243,3 +243,96 @@ def test_pvlib_modelchain_no_nonfinite_values(country):
             f"{country}@({lat},{lon}): negative ac output "
             f"(orientation={orientation})"
         )
+
+
+def _synthetic_solar_ds_full_year(lat: float, lon: float, year: int) -> xr.Dataset:
+    """Full-year hourly synthetic dataset at a single point. Unlike
+    `_synthetic_solar_ds` (a handful of sparse dates), this covers every
+    hour of one year so the sun's real position (computed from real
+    timestamps, not synthetic) traces its actual seasonal/daily path --
+    needed to meaningfully compare two orientations' *relative* output,
+    not just check for crashes/non-finite values."""
+    time = pd.date_range(f"{year}-01-01", f"{year}-12-31 23:00", freq="h")
+    nt = len(time)
+    rng = np.random.default_rng(abs(hash((lat, lon, year))) % (2**32))
+
+    return xr.Dataset(
+        {
+            "influx_diffuse": (["time", "y", "x"], rng.uniform(0, 200, (nt, 1, 1))),
+            "influx_direct": (["time", "y", "x"], rng.uniform(0, 800, (nt, 1, 1))),
+            "dewpoint_temperature": (["time", "y", "x"], rng.uniform(295, 300, (nt, 1, 1))),
+            "temperature": (["time", "y", "x"], rng.uniform(298, 305, (nt, 1, 1))),
+            "wnd100m": (["time", "y", "x"], rng.uniform(0, 8, (nt, 1, 1))),
+        },
+        coords={"time": time, "y": [lat], "x": [lon]},
+    )
+
+
+def test_southern_hemisphere_orientation_beats_hardcoded_south_facing():
+    """Regression guard for the Indonesia hemisphere-orientation bug at the
+    full-ModelChain level, not just the `latitude_optimal_orientation()`
+    helper (already unit-tested separately in test_pvlib_orientation.py).
+
+    Runs the real pvlib ModelChain a full synthetic year at a southern
+    Indonesia point, once with the correct (north-facing) orientation and
+    once with the old hardcoded (south-facing, tilt=35/azimuth=180) bug,
+    and asserts the correct orientation produces meaningfully more annual
+    energy -- the physically expected direction south of the equator.
+    Empirically the fix produces ~1.7x the old bug's output here; a 1.1x
+    margin is asserted to leave headroom against synthetic-data noise
+    while still failing on any real regression back toward the old
+    orientation.
+    """
+    lat, lon = -10.17, 123.6  # Kupang, NTT -- southern Indonesia
+    cfg = COUNTRY_SOLAR_CONFIG["indonesia"]
+
+    fixture_cls = load_dataset("wind_solar_hourly_test")
+    fixture = fixture_cls(years=slice(2016, 2016), months=slice(1, 1))
+    model = Pvlib(fixture)
+
+    cec_modules = model.retrieve_sam("CECMod")
+    cec_inverters = model.retrieve_sam("CECInverter")
+    module = cec_modules[cfg["module"]]
+    inverter = cec_inverters[cfg["inverter"]]
+
+    model.init_model_config(
+        clearsky_model="haurwitz",
+        transposition_model="perez",
+        solar_position_method="nrel_numpy",
+        airmass_model="kastenyoung1989",
+        dc_model="cec",
+        ac_model="sandia",
+        aoi_model="physical",
+        spectral_model="first_solar",
+        dc_ohmic_model="no_loss",
+    )
+
+    ds = _synthetic_solar_ds_full_year(lat, lon, year=2020)
+
+    def _annual_ac_sum(tilt: float, azimuth: float) -> float:
+        model.init_pv_system(
+            arrays=None,
+            surface_tilt=tilt,
+            surface_azimuth=azimuth,
+            racking_model="open_rack",
+            module_parameters=module,
+            modules_per_string=50,
+            module_type="glass_polymer",
+            module=cfg["module"],
+            strings_per_inverter=1,
+            inverter_parameters=inverter,
+        )
+        result = model._pvlib_model(
+            ds, model.pv_system, model.config, n_jobs=1, compact_output=True
+        )
+        return float(np.nansum(result["ac"].values))
+
+    correct = latitude_optimal_orientation(lat)
+    fixed_total = _annual_ac_sum(correct["surface_tilt"], correct["surface_azimuth"])
+    buggy_total = _annual_ac_sum(tilt=35.0, azimuth=180.0)
+
+    assert fixed_total > buggy_total * 1.1, (
+        f"Correct orientation ({correct}) produced {fixed_total:.0f} Wh/yr, "
+        f"not meaningfully more than the old hardcoded south-facing bug's "
+        f"{buggy_total:.0f} Wh/yr -- hemisphere-orientation regression?"
+    )
