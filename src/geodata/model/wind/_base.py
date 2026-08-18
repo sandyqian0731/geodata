@@ -40,7 +40,6 @@ Example:
 """
 
 import xarray as xr
-from typing import Any, cast
 
 from ...resource import get_windturbineconfig
 from .._base import BaseModel
@@ -136,7 +135,7 @@ class WindBaseModel(BaseModel):
             turbineconf["V"],
             turbineconf["POW"],
             bounds_error=False,
-            fill_value=cast(Any, "extrapolate"),
+            fill_value=0.0,
         )
 
         # Calculate the power output
