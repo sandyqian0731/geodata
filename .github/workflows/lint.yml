@@ -6,4 +6,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: chartboost/ruff-action@v1
+      - uses: astral-sh/ruff-action@v3
+        with:
+          # Kept in sync with the "ruff" pin in pyproject.toml's
+          # [tool.uv] dev-dependencies (a location this action's
+          # pyproject.toml auto-detection does not read).
+          version: ">=0.16,<0.17"

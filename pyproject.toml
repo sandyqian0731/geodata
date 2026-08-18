@@ -62,7 +62,7 @@ accelerate = [
 dev-dependencies = [
     "black>=24.8.0",
     "isort>=5.13.2",
-    "ruff>=0.6.8",
+    "ruff>=0.16,<0.17",
     "pytest>=8.3.3",
 ]
 
@@ -74,3 +74,8 @@ line-length = 88
 
 [tool.ruff.lint]
 exclude = ["*.ipynb"]
+# Ruff 0.16 expanded its default rule set from 59 to 413 rules; pin to the
+# pre-0.16 default explicitly so CI doesn't silently pick up new categories
+# on the next ruff bump. See docs.astral.sh/ruff/default-rules for the
+# expanded set, which we may opt into deliberately, rule-by-rule, later.
+select = ["E4", "E7", "E9", "F"]
