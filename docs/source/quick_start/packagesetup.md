@@ -3,14 +3,17 @@
 This guide covers how to install and configure the **geodata** package for local and cloud use.
 
 ```{important}
-This documentation describes the **`data-pvlib-integration`** branch of geodata
-(hosted at [KULcoder/geodata](https://github.com/KULcoder/geodata/tree/data-pvlib-integration),
-not yet merged into [GeodataTools/geodata](https://github.com/GeodataTools/geodata)).
-It adds features the upstream `master` branch does not have — the `pvlib`-based
-solar model (`geodata.model.pvlib`), the `geodata.mask` module, and the
-restructured `datasets/era5`, `datasets/merra2`, `datasets/hrrr` packages.
-**Installing from `GeodataTools/geodata` (master) instead of this branch will
-silently give you a package missing all of these.**
+This documentation describes **this repository's `main` branch**
+([sandyqian0731/geodata](https://github.com/sandyqian0731/geodata)). It carries
+KULcoder's `data-pvlib-integration` work — the `pvlib`-based solar model
+(`geodata.model.pvlib`), the `geodata.mask` module, and the restructured
+`datasets/era5`, `datasets/merra2`, `datasets/hrrr` packages, none of which are
+in upstream [GeodataTools/geodata](https://github.com/GeodataTools/geodata)
+`master` — **plus this repository's own fixes** (see the README), which the
+parent [KULcoder/geodata](https://github.com/KULcoder/geodata/tree/data-pvlib-integration)
+branch does not have. **Installing from `GeodataTools/geodata` (master) or from
+`KULcoder/geodata@data-pvlib-integration` instead of this repository will
+silently give you a package missing some or all of these.**
 ```
 
 Make sure that you have the following **required** software set up:
@@ -25,27 +28,31 @@ Make sure that you have the following **required** software set up:
 
 ### Option A: install directly with pip (no local clone)
 
-If you don't need to edit geodata's source, install this branch straight from GitHub into
-your active environment:
+If you don't need to edit geodata's source, install this repository straight from GitHub
+into your active environment:
 
 ```bash
-pip install --force-reinstall "geodata @ git+https://github.com/KULcoder/geodata.git@data-pvlib-integration"
+pip install --force-reinstall "geodata @ git+https://github.com/sandyqian0731/geodata.git@main"
 ```
 
-This is the install command used by the lab's own [RE Profiles End-to-End
+This is the fastest path if you just want to *use* the package (e.g. from
+`geodata_helpers` scripts). It matches the install pattern in the lab's own
+[RE Profiles End-to-End
 Workflow](https://docs.google.com/document/u/3/d/1rWgo6mjNRm7zkycCQthHBqQRv1f_NnsRbWBefU3MCSM/edit)
-for generating RE profiles on TSCC, and is the fastest path if you just want to *use* the
-package (e.g. from `geodata_helpers` scripts).
+for generating RE profiles on TSCC — note that if that document still installs from
+`KULcoder/geodata@data-pvlib-integration`, it installs this repository's *parent*,
+without the fixes described in the README (`latitude_optimal_orientation` does not
+exist there, so `geodata_helpers`' solar driver fails on import).
 
 ### Option B: clone the repo (for local development)
 
 To download **geodata** for local editing, open a terminal/shell window, navigate to your
 preferred working directory, and run the following. (If you do not have Git installed, you
-may also directly download the branch as a
-[zip archive](https://github.com/KULcoder/geodata/archive/refs/heads/data-pvlib-integration.zip).)
+may also directly download the repository as a
+[zip archive](https://github.com/sandyqian0731/geodata/archive/refs/heads/main.zip).)
 
 ```bash
-git clone -b data-pvlib-integration https://github.com/KULcoder/geodata.git
+git clone https://github.com/sandyqian0731/geodata.git
 cd geodata
 ```
 
