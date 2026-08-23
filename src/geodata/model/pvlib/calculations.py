@@ -255,11 +255,10 @@ def latitude_optimal_orientation(lat: float) -> dict:
     degrees convention expected by :code:`pvlib.pvsystem.PVSystem`) for a
     latitude-optimal, equator-facing panel.
 
-    Tilt follows the same rule-of-thumb piecewise fit used elsewhere in
-    geodata's (legacy) orientation code and in gsee [1]_: below 25 degrees
-    of absolute latitude, tilt scales at 0.87x latitude; between 25 and 50
-    degrees, at 0.76x latitude plus 0.31 degrees; above 50 degrees, a flat
-    40 degrees. Unlike that legacy implementation
+    Tilt follows the rule-of-thumb piecewise fit used in gsee [1]_: below
+    25 degrees of absolute latitude, tilt scales at 0.87x latitude;
+    between 25 and 50 degrees, at 0.76x latitude plus 3.1 degrees; above
+    50 degrees, a flat 40 degrees. Unlike geodata's legacy implementation
     (:code:`geodata.pv.orientation.make_latitude_optimal`), this works for
     both hemispheres: a panel should face the equator, so ``azimuth`` is
     180 (south-facing) in the northern hemisphere but 0 (north-facing) in
@@ -298,7 +297,7 @@ def latitude_optimal_orientation(lat: float) -> dict:
     if abs_lat <= 25:
         tilt = 0.87 * abs_lat
     elif abs_lat <= 50:
-        tilt = 0.76 * abs_lat + 0.31
+        tilt = 0.76 * abs_lat + 3.1
     else:
         tilt = 40.0
 

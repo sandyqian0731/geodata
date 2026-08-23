@@ -61,3 +61,26 @@ def test_tilt_symmetric_across_equator(lat_pos, lat_neg):
 def test_high_latitude_caps_at_40_degrees():
     orientation = latitude_optimal_orientation(65.0)
     assert orientation["surface_tilt"] == 40.0
+
+
+def test_mid_latitude_band_matches_gsee_rule():
+    """25 < |lat| <= 50 uses gsee's 0.76*|lat| + 3.1 (not the 0.31 typo).
+
+    E.g. 34.3 degrees (Xi'an): 0.76 * 34.3 + 3.1 = 29.168. The 0.31
+    transcription typo carried over from the legacy orientation code gave
+    26.398 instead -- a 2.79-degree systematic under-tilt for every site
+    in the band.
+    """
+    orientation = latitude_optimal_orientation(34.3)
+    assert orientation["surface_tilt"] == pytest.approx(29.168)
+
+
+def test_tilt_continuous_across_25_degree_breakpoint():
+    """The piecewise fit should be (near-)continuous at |lat| = 25.
+
+    0.87 * 25 = 21.75 just below; 0.76 * 25 + 3.1 = 22.1 just above. With
+    the 0.31 typo the upper branch gave 19.31, a 2.44-degree jump down.
+    """
+    below = latitude_optimal_orientation(25.0)["surface_tilt"]
+    above = latitude_optimal_orientation(25.000001)["surface_tilt"]
+    assert below == pytest.approx(above, abs=0.5)
