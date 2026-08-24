@@ -628,6 +628,11 @@ class Mask:
             self.layers[key] = shape_raster
             logger.info("Layer %s added to the mask %s.", key, self.name)
 
+        # New shape layers change the mask state: without this, a mask loaded
+        # via from_name would report saved=True and save_mask() would silently
+        # no-op, serving the pre-shape-layer state from disk to consumers.
+        self.saved = False
+
 
     def extract_shapes(
         self,
