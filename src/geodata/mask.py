@@ -153,19 +153,40 @@ class Mask:
                     "replace the existing one with replace = True."
                 )
 
-        new_raster = ras.open(layer_path, "r+")
-
-        # make sure that nodata value is 0
-        new_raster.nodata = 0
+        # Open the user's file READ-ONLY: geodata must never mutate an input
+        # file (the previous "r+" open persisted ``nodata = 0`` into the
+        # source GeoTIFF on disk, silently re-labeling real nodata fills such
+        # as -9999 as valid data for every other tool).
+        new_raster = ras.open(layer_path, "r")
 
         if not src_crs:
             src_crs = new_raster.crs
+
+        # Normalize to the module-wide convention (0 == "unavailable"/nodata)
+        # in an in-memory copy: pixels flagged by the file's ORIGINAL nodata
+        # value are masked out to 0 so that fill values (e.g. -9999) never
+        # leak into filters or merges as valid data.
+        if new_raster.nodata is not None and new_raster.nodata != 0:
+            masked_band = new_raster.read(1, masked=True)
+            source_raster = new_raster
+            new_raster = create_temp_tif(
+                np.ma.filled(masked_band, 0),
+                source_raster.transform,
+                crs=source_raster.crs,
+                nodata=0,
+            )
+            source_raster.close()
 
         if src_crs != dest_crs:
             # check if CRS is lat-lon system
             if ras.crs.CRS.from_string(dest_crs) != new_raster.crs:
                 new_raster = reproject_raster(
-                    new_raster, src_crs=src_crs, dst_crs=dest_crs, trim=trim
+                    new_raster,
+                    src_crs=src_crs,
+                    dst_crs=dest_crs,
+                    trim=trim,
+                    src_nodata=0,
+                    dst_nodata=0,
                 )
 
         self.layers[layer_name] = new_raster
@@ -607,6 +628,7 @@ class Mask:
             self.layers[key] = shape_raster
             logger.info("Layer %s added to the mask %s.", key, self.name)
 
+
     def extract_shapes(
         self,
         shapes: dict[str, shapely.Geometry] | gpd.GeoDataFrame,
@@ -1018,6 +1040,7 @@ def _open_memory_dataset(
     crs: str | ras.crs.CRS = "+proj=latlong",
     compress: str = "lzw",
     count: int = 1,
+    nodata: Optional[float] = None,
 ) -> ras.DatasetReader:
     """Write ``arr`` to a GeoTIFF in memory and return an open reader."""
     memfile = MemoryFile()
@@ -1030,6 +1053,7 @@ def _open_memory_dataset(
         compress=compress,
         crs=crs,
         transform=transform,
+        nodata=nodata,
     ) as dst:
         if arr.ndim == 2:
             dst.write(arr, 1)
@@ -1040,7 +1064,11 @@ def _open_memory_dataset(
 
 
 def create_temp_tif(
-    arr: np.ndarray, transform: ras.Affine, open_raster: bool = True
+    arr: np.ndarray,
+    transform: ras.Affine,
+    open_raster: bool = True,
+    crs: str | ras.crs.CRS = "+proj=latlong",
+    nodata: Optional[float] = None,
 ) -> ras.DatasetReader | str:
     """Create a ras.DatasetReader object openning a temporary rasterio file
 
@@ -1051,12 +1079,14 @@ def create_temp_tif(
         arr (ArrayLike): An ArrayLike object that contains values of the layer.
         transform (rasterio.Affine): Affine transformation for the layer.
         open_raster (bool): Whether the raster will be opened. True by default.
+        crs: Coordinate reference system of the layer. Lat-lon by default.
+        nodata (float): Optional nodata value recorded in the temporary raster.
 
     Returns:
         rasterio.DatasetReader: The temporary raster.
     """
 
-    dataset = _open_memory_dataset(arr, transform)
+    dataset = _open_memory_dataset(arr, transform, crs=crs, nodata=nodata)
     if open_raster:
         return dataset
     return dataset.name
@@ -1149,6 +1179,8 @@ def reproject_raster(
     src_crs: str,
     dst_crs: str = "EPSG:4326",
     trim: bool = False,
+    src_nodata: Optional[float] = None,
+    dst_nodata: Optional[float] = None,
     **kwargs,
 ) -> ras.DatasetReader:
     """Convert CRS of TIFF file from one to another. By default, we want to make the destination raster
@@ -1160,6 +1192,9 @@ def reproject_raster(
         dst_crs (str): By default, we want to make the destination raster in lat/lon coordinate system.
             However, this can still be changed by specifying the dst_crs.
         trim (bool): False by default. If True, we will trim the empty border to save space.
+        src_nodata (float): Nodata value of the source passed explicitly to the warp,
+            so nodata pixels are never resampled into valid data.
+        dst_nodata (float): Nodata value used to initialize/fill the destination.
 
     Returns:
         ras.DatasetReader: The reprojected raster.
@@ -1172,6 +1207,8 @@ def reproject_raster(
     kwargs.update(
         {"crs": dst_crs, "transform": transform, "width": width, "height": height}
     )
+    if dst_nodata is not None:
+        kwargs["nodata"] = dst_nodata
 
     # write it to another file: the CRS corrected one
     # rasterio.readthedocs.io/en/latest/topics/reproject.html
@@ -1185,6 +1222,8 @@ def reproject_raster(
                 src_crs=src_crs,
                 dst_transform=transform,
                 dst_crs=dst_crs,
+                src_nodata=src_nodata,
+                dst_nodata=dst_nodata,
                 resampling=ras.warp.Resampling.nearest,
             )
 
