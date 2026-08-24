@@ -11,9 +11,16 @@ directories; no network, no downloads):
   stay zero (the historical uniform-window heuristic resurrected excluded
   land);
 - ``merge_layer(method="sum")`` of two all-one layers must be 2 (the
-  historical heuristic discarded the accumulated values).
+  historical heuristic discarded the accumulated values);
+- ``add_layer`` must leave the source GeoTIFF's nodata tag and pixels
+  untouched on disk (the historical ``r+`` open persisted ``nodata = 0``
+  into the user's file) while masking the original fill values to 0 in the
+  in-memory layer;
+- ``add_shape_layer`` must clear the ``saved`` flag so a subsequent
+  ``save_mask()`` actually writes (historically it silently no-opped).
 
-All four fail on the unpatched module and pass with this branch. The file is
+The correctness vectors fail on the unpatched module and pass with this
+branch. The file is
 pytest-style but also directly executable without pytest:
 
     python tests/pr/mask/test_mask_correctness.py
@@ -172,6 +179,66 @@ def test_merge_layer_sum_of_two_ones_is_two():
     )
     merged = m.merge_layer(method="sum", show_raster=False).read(1)
     assert (merged == 2).all(), f"SUM of two all-one layers returned\n{merged}"
+
+
+def test_add_layer_leaves_source_nodata_untouched():
+    """add_layer must never mutate the user's file; fills mask to 0 in memory.
+
+    Historically ``_add_layer`` opened the source with ``r+`` and persisted
+    ``nodata = 0`` into the GeoTIFF header on disk, so -9999-style fills were
+    re-labeled as valid data for every other tool, and the fills themselves
+    leaked through filters (e.g. ``-9999 < max_bound`` passed an elevation
+    ceiling).
+    """
+    tmp = tempfile.mkdtemp(prefix="geodata_mask_nodata_")
+    elev = np.array(
+        [[100.0, 250.0, -9999.0], [3000.0, -9999.0, 50.0], [0.0, 800.0, 1200.0]],
+        dtype=np.float32,
+    )
+    src_path = _write_tif(Path(tmp) / "elev.tif", elev, nodata=-9999.0)
+
+    m = Mask("test_nodata", layer_path=src_path, layer_name="elev",
+             mask_dir=os.path.join(tmp, "masks"))
+
+    # The file on disk is untouched: nodata tag and pixel values unchanged.
+    with ras.open(src_path) as reopened:
+        assert reopened.nodata == -9999.0, (
+            f"source nodata was rewritten on disk to {reopened.nodata}"
+        )
+        assert (reopened.read(1) == elev).all(), "source pixels were mutated"
+
+    # The in-memory layer follows the module convention: fills masked to 0.
+    band = m.layers["elev"].read(1)
+    assert band[0, 2] == 0 and band[1, 1] == 0, (
+        f"-9999 fills were not masked to 0 in the layer:\n{band}"
+    )
+    # Real values survive.
+    assert band[0, 0] == 100.0 and band[2, 2] == 1200.0
+
+
+def test_add_shape_layer_clears_saved_flag():
+    """add_shape_layer must invalidate ``saved`` so save_mask() writes.
+
+    Every other layer-mutating method clears the flag; historically
+    ``add_shape_layer`` did not, so ``save_mask()`` after adding shapes
+    logged success while writing nothing.
+    """
+    import shapely.geometry
+
+    tmp = tempfile.mkdtemp(prefix="geodata_mask_shape_saved_")
+    ones = np.ones((4, 4), dtype=np.uint8)
+    m = Mask("test_shape_saved",
+             layer_path=_write_tif(Path(tmp) / "base.tif", ones),
+             layer_name="base",
+             mask_dir=os.path.join(tmp, "masks"))
+    m.save_mask()
+    assert m.saved is True, "precondition: mask saved"
+
+    box = shapely.geometry.box(100.05, 9.75, 100.25, 9.95)
+    m.add_shape_layer({"box": box}, reference_layer="base")
+    assert m.saved is False, (
+        "add_shape_layer left saved=True; save_mask() would silently no-op"
+    )
 
 
 if __name__ == "__main__":
