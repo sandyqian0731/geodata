@@ -359,7 +359,8 @@ def _process_single_coordinate(args):
             - system: PVSystem object
             - model_chain_kwargs: Dictionary of ModelChain configuration
             - ptc: Module PTC value
-            - n_mods: Number of modules per string
+            - n_mods: Total number of modules feeding the inverter
+              (modules_per_string * strings)
             - progress_dict: Shared dictionary for progress tracking (optional)
             - coord_index: Index of this coordinate in the total list
             - total_coords: Total number of coordinates to process
@@ -981,7 +982,13 @@ class Pvlib(BaseModel):
 
         """
         ptc = system.arrays[0].module_parameters['PTC']
-        n_mods = system.arrays[0].modules_per_string
+        # Nameplate normalization must count EVERY module feeding the
+        # inverter: pvlib's Array wires `strings` strings of
+        # `modules_per_string` modules in parallel, and mc.results.ac is the
+        # whole inverter's AC output. Dividing by modules_per_string alone
+        # overstated `pv` by the strings_per_inverter factor (e.g. 4x for a
+        # 4-string system).
+        n_mods = system.arrays[0].modules_per_string * system.arrays[0].strings
 
         weather_data = self._prepare_pvlib_ds(ds, *vars).to_dataframe()
         unique_coords = weather_data.index.droplevel('time').drop_duplicates()
