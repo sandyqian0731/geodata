@@ -41,7 +41,7 @@ from timezonefinder import TimezoneFinder
 
 from .._base import BaseModel, _normalize_slice_for_sel, _should_use_parallel_reading
 from geodata.logging import logger
-from .calculations import calculate_pvlib_solarposition, calculate_ghi, calculate_relative_humidity, calculate_precipitable_water, convert_kelvin_to_celsius
+from .calculations import calculate_pvlib_solarposition, calculate_dni, calculate_ghi, calculate_relative_humidity, calculate_precipitable_water, convert_kelvin_to_celsius
 from tqdm.auto import tqdm
 
 
@@ -794,7 +794,7 @@ class Pvlib(BaseModel):
         Requires a cutout with the following variables:
 
         - **influx_diffuse** (*float*) - Diffuse horizontal irradiance.  
-        - **influx_direct** (*float*) - Direct normal irradiance.  
+        - **influx_direct** (*float*) - Direct horizontal (beam) irradiance, ERA5's fdir.  
         - **dewpoint_temperature** (*float*) - Dewpoint temperature in Celsius.  
         - **temperature** (*float*) - Air temperature in Celsius.  
         - **wnd100m** (*float*) - Wind speed at 100m.  
@@ -802,7 +802,7 @@ class Pvlib(BaseModel):
         Outputs an `xarray.Dataset` with the following variables:
 
         - **dhi** (*float*) - Diffuse horizontal irradiance.  
-        - **dni** (*float*) - Direct normal irradiance.  
+        - **dni** (*float*) - Direct normal irradiance (calculated via :code:`calculate_dni()`).  
         - **ghi** (*float*) - Global horizontal irradiance (calculated via :code:`_calculate_ghi()`).  
         - **temp_air** (*float*) - Air temperature in Celsius.  
         - **wind_speed** (*float*) - Wind speed at 100m.  
@@ -851,17 +851,22 @@ class Pvlib(BaseModel):
 
         sp = calculate_pvlib_solarposition(ds)
         ghi = calculate_ghi(ds, sp['zenith'])
+        # ERA5's influx_direct (fdir) is the direct irradiance on a HORIZONTAL
+        # plane, not the direct normal irradiance ModelChain expects: derive
+        # true DNI = BHI / cos(zenith) instead of renaming fdir to 'dni'.
+        dni = calculate_dni(ds, sp['zenith'])
 
         ds = (
             ds
             .assign(
                 ghi=ghi,
+                dni=dni,
                 temperature=temperature_celsius,
                 precipitable_water=precipitable_water
             )
+            .drop_vars('influx_direct')
             .rename({
                 'influx_diffuse': 'dhi',
-                'influx_direct': 'dni',
                 'temperature': 'temp_air',
                 'wnd100m': 'wind_speed'
             })
@@ -943,7 +948,7 @@ class Pvlib(BaseModel):
         Requires a cutout with the following variables:
 
         - **influx_diffuse** (*float*) - Diffuse horizontal irradiance.  
-        - **influx_direct** (*float*) - Direct normal irradiance.  
+        - **influx_direct** (*float*) - Direct horizontal (beam) irradiance, ERA5's fdir.  
         - **dewpoint_temperature** (*float*) - Dewpoint temperature in Celsius.  
         - **temperature** (*float*) - Air temperature in Celsius.  
         - **wnd100m** (*float*) - Wind speed at 100m.  

@@ -47,21 +47,33 @@ def calculate_ghi(
     zenith: pd.Series
 ) -> xr.DataArray:
     """
-    Calculates global horizontal irradiance (ghi) from data arrays representing influx diffuse (dhi) and influx direct (dni)
-    Negative values are clipped.  Calculated using the formula:
+    Calculates global horizontal irradiance (ghi). Negative values are clipped.
+
+    ERA5's ``influx_direct`` (``fdir``) is the direct irradiance received on a
+    HORIZONTAL plane (beam horizontal irradiance, BHI), not the direct NORMAL
+    irradiance (DNI). GHI is therefore the plain sum of the two horizontal
+    components -- no zenith projection is involved:
 
     .. math::
 
-    GHI = DHI + DNI * cos(Z)
+    GHI = DHI + BHI
 
-    where Z representst the solar zenith as calculated by :code:`calculate_pvlib_solarposition()`.
+    (Multiplying ``influx_direct`` by cos(zenith), as this function previously
+    did, double-applies the projection and understates GHI everywhere the sun
+    is not at the zenith.) If the dataset still carries ERA5's ``ssrd``
+    (surface solar radiation downwards, which *is* GHI by definition), that
+    value is used directly instead of re-deriving it.
 
     Parameters
     ----------
     ds : xarray dataset
-        An xarray dataset containing series for both influx diffuse (dhi) and influx direct (dni).
+        An xarray dataset containing series for influx diffuse (DHI) and
+        influx direct (BHI), and optionally ssrd.
     zenith : numeric
-        Zenith angle of the sun in degrees, as calculated by :code:`_calculate_pvlib_solarposition()`.
+        Zenith angle of the sun in degrees, as calculated by
+        :code:`calculate_pvlib_solarposition()`. Only used to validate that
+        the dataset is non-empty; the GHI arithmetic itself is
+        zenith-independent.
 
     Returns
     -------
@@ -78,7 +90,7 @@ def calculate_ghi(
     zenith_vals = np.asarray(zenith_vals)
 
     dhi = ds.influx_diffuse.values.ravel()
-    dni = ds.influx_direct.values.ravel()
+    bhi = ds.influx_direct.values.ravel()
 
     if zenith_vals.size == 0:
         x_coord = ds.coords.get("x")
@@ -107,16 +119,16 @@ def calculate_ghi(
             "Check that your xs and ys values (in degrees) overlap with these coordinate ranges."
         )
 
-    # zenith comes from calculate_pvlib_solarposition(), which wraps
-    # pvlib.solarposition.get_solarposition() -- pvlib documents this as
-    # always returning angles in degrees, so the conversion is unconditional.
-    zenith_vals = np.deg2rad(zenith_vals)
-
-    ghi = np.clip(
-        dhi + dni * np.cos(zenith_vals),
-        0,
-        np.inf # `np.Inf` was removed in the NumPy 2.0 release.
-    )
+    if "ssrd" in ds.data_vars:
+        # ERA5's ssrd IS the global horizontal irradiance; use it directly.
+        ghi = np.clip(ds.ssrd.values.ravel(), 0, np.inf)
+    else:
+        # Both components are horizontal-plane fluxes, so GHI is their sum.
+        ghi = np.clip(
+            dhi + bhi,
+            0,
+            np.inf # `np.Inf` was removed in the NumPy 2.0 release.
+        )
 
     reshaped_ghi = ghi.reshape(
         ds.sizes['time'], 
@@ -137,8 +149,96 @@ def calculate_ghi(
 
     ghi.name = "ghi"
     ghi.attrs["units"] = "W m**-2"
-    ghi.attrs["description"] = "Ghi calculated from influx diffuse (dhi) and influx direct (dni)."
+    ghi.attrs["description"] = (
+        "GHI taken from ssrd when present, otherwise the sum of influx "
+        "diffuse (DHI) and influx direct (BHI, horizontal)."
+    )
     return ghi
+
+
+def calculate_dni(
+    ds: xr.Dataset,
+    zenith: pd.Series,
+    zenith_max_deg: float = 88.0,
+) -> xr.DataArray:
+    """
+    Derives direct normal irradiance (DNI) from ERA5's horizontal beam
+    irradiance.
+
+    ERA5's ``influx_direct`` (``fdir``) is the direct irradiance received on a
+    HORIZONTAL plane (BHI), while pvlib's ModelChain expects true DNI (the
+    flux on a plane normal to the sun). The two are related through the solar
+    zenith angle Z:
+
+    .. math::
+
+    DNI = BHI / cos(Z)
+
+    Passing ``influx_direct`` to pvlib as ``dni`` unconverted (as this module
+    previously did) understates DNI by the factor cos(Z) -- e.g. by half at
+    Z = 60 degrees -- so plane-of-array irradiance and AC output are biased
+    low everywhere the sun is off-zenith.
+
+    To avoid the 1/cos(Z) blow-up at grazing angles (where ERA5's
+    hourly-integrated fdir and an instantaneous zenith angle are numerically
+    incompatible), DNI is set to 0 wherever Z >= ``zenith_max_deg`` (default
+    88 degrees, the same cutoff pvlib.irradiance.dni uses). Negative input
+    values are clipped to 0.
+
+    Parameters
+    ----------
+    ds : xarray dataset
+        An xarray dataset containing influx direct (BHI).
+    zenith : numeric
+        Zenith angle of the sun in degrees, as calculated by
+        :code:`calculate_pvlib_solarposition()`.
+    zenith_max_deg : float
+        Zenith angle in degrees at and beyond which DNI is set to 0.
+
+    Returns
+    -------
+    dni : numeric
+        Direct normal irradiance (dni) [W m**-2].
+
+    """
+    if isinstance(zenith, (pd.Series, xr.DataArray)):
+        zenith_vals = zenith.values  # type: ignore[union-attr]
+    else:
+        zenith_vals = zenith
+    # zenith comes from calculate_pvlib_solarposition(), which wraps
+    # pvlib.solarposition.get_solarposition() -- pvlib documents this as
+    # always returning angles in degrees.
+    zenith_vals = np.asarray(zenith_vals, dtype=float)
+
+    bhi = np.clip(ds.influx_direct.values.ravel().astype(float), 0, np.inf)
+
+    sun_up = zenith_vals < zenith_max_deg
+    dni = np.zeros_like(bhi)
+    np.divide(bhi, np.cos(np.deg2rad(zenith_vals)), out=dni, where=sun_up)
+
+    reshaped_dni = dni.reshape(
+        ds.sizes['time'],
+        ds.sizes['y'],
+        ds.sizes['x']
+    )
+
+    dni = xr.DataArray(
+        reshaped_dni,
+        dims=("time", "y", "x"),
+        coords={
+            "time": ds['time'].values,
+            "y": ds['y'].values,
+            "x": ds['x'].values
+        },
+        name="dni"
+    )
+
+    dni.attrs["units"] = "W m**-2"
+    dni.attrs["description"] = (
+        "DNI derived from influx direct (BHI, horizontal) as BHI / cos(zenith), "
+        f"set to 0 for zenith >= {zenith_max_deg} degrees."
+    )
+    return dni
 
 def calculate_relative_humidity(
     temperature: xr.DataArray, 
